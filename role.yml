@@ -1,0 +1,69 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CloudFormation template to create an IAM Role for GitHub OIDC integration
+  with specific permissions and restrictions.
+
+Resources:
+  GithubTrustRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "GithubTrustRole" # Name of the IAM Role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: "sts:AssumeRoleWithWebIdentity" 
+            Condition:
+              StringEquals:
+                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" 
+            StringLike:
+              "token.actions.githubusercontent.com:sub":
+                - "repo:CBA-General/aws-ddb-tetris-tarv2"
+                - "repo:CBA-General/CBA-General/aws-tetris-cicd"
+    Policies:
+      - PolicyName: "AllowAssumeRole" 
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - "sts:AssumeRole" 
+                - "sts:TagSession" 
+              Resource: !Sub arn:aws:iam::${AWS::AccountId}:role/GHA-CICD
+      - PolicyName: "DenyOutsideAccess" 
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Deny"
+              Action: "*" 
+              Resource: "*" 
+              Condition:
+                StringNotEquals:
+                  "aws:SourceVpc":
+                    - "vpc-0ebb4ee6c9c0859a3" # Restrict access to this VPC
+GithubCICD:
+  Type: 'AWS::IAM::Role'
+  Properties:
+    RoleName: 'GHA-CICD'
+    ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AdministratorAccess
+    AssumeRolePolicyDocument:
+      Version: '2012-10-17'
+      Statement:
+        - Action: 
+            - 'sts:AssumeRole'
+            - 'sts:TagSession'
+          Effect: Allow
+          Principal:
+            AWS: !GetAtt GithubTrustRole.Arn
+
+Outputs:
+  GithubTrustRoleArn:
+    Description: "The ARN of the GitHub OIDC Role"
+    Value: !GetAtt GithubTrustRole.Arn
+  GithubCICDArn:
+    Description: "The ARN of the Github CICD Role"
+    Value: !GetAtt GithubCICD.Arn
