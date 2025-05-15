@@ -105,4 +105,4 @@ jobs:
             fi
           fi
         env:
-          AWS_REGION: ap-southeast-2
+          AWS_REGION: ap-southeast-21
