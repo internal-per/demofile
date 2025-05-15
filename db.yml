@@ -29,12 +29,6 @@ Resources:
         - AttributeName: approved_policy_actions
           AttributeType: S
       KeySchema:
-        - AttributeName: service
-          KeyType: HASH
-        - AttributeName: version
-          KeyType: RANGE
-
-      KeySchema:
         - AttributeName: services
           KeyType: HASH
         - AttributeName: version
@@ -136,5 +130,5 @@ Outputs:
     Description: ARN of the AWS Backup vault
     Value: !Sub arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${BackupVaultName}
   BackupPlanArn:
-    Description: ARN of the AWS Backup plan
+    Description: ARN60 Description: ARN of the AWS Backup plan
     Value: !Sub arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-plan:${BackupPlanName}
