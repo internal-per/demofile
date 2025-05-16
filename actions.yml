@@ -1,4 +1,4 @@
-name: Deploy Centralised PRP DDB for TARV2
+name: Deploy Centralised PRP DDB for TARV21
 
 on:
   push:
@@ -20,9 +20,6 @@ on:
         type: string
         default: "3.11"
 
-env:
-  AWS_REGION: "ap-southeast-2"
-
 permissions:
   id-token: write # This is required for requesting the JWT
   contents: write # This is for repo checkout
@@ -36,8 +33,6 @@ jobs:
       matrix:
         template:
           - prp-ddb.yml
-          # Add more CFN templates if needed, e.g.:
-          # - other-dynamodb.yml
         account:
           - dev
       fail-fast: false
@@ -62,15 +57,34 @@ jobs:
         with:
           role-to-assume: ${{ secrets.GHA_TRUST_ROLE_ARN }}
           role-session-name: "GitHubActions"
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1 # Temporary region for initial credential configuration
 
       - name: Configure AWS credentials (AssumeRole)
         uses: aws-actions/configure-aws-credentials@v2.2.0
         with:
           role-to-assume: ${{ secrets.GHA_CICD_ROLE_ARN }}
           role-session-name: "GitHubActions"
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1 # Temporary region for role chaining
           role-chaining: true
+
+      - name: Fetch AWS Region
+        run: |
+          REGION=$(aws sts get-caller-identity --query 'Arn' --output text | cut -d':' -f4)
+          if [ -z "$REGION" ]; then
+            echo "Failed to fetch region, defaulting to ap-southeast-2"
+            REGION="ap-southeast-2"
+          fi
+          echo "AWS_REGION=$REGION" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Validate CloudFormation Template
+        run: |
+          echo "Validating template: ${{ matrix.template }}"
+          aws cloudformation validate-template \
+            --template-body file://cloudformation/${{ matrix.template }} \
+            --region ${{ env.AWS_REGION }}
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
 
       - name: Deploy CloudFormation Stack
         run: |
@@ -80,6 +94,8 @@ jobs:
           aws cloudformation deploy \
             --template-file cloudformation/${{ matrix.template }} \
             --stack-name $STACK_NAME \
+            --parameter-overrides \
+              BackupRoleName=PrpOrgPolicyBackupRole \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --region ${{ env.AWS_REGION }} \
             --no-fail-on-empty-changeset
@@ -91,7 +107,7 @@ jobs:
                 --stack-name $STACK_NAME \
                 --region ${{ env.AWS_REGION }} \
                 --query 'Stacks[0].StackStatus' \
-                --output text
+                --output text)
               echo "Stack status: $STACK_STATUS"
               if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
                 echo "Stack is in $STACK_STATUS state. Exiting with failure."
@@ -107,5 +123,35 @@ jobs:
               exit $EXIT_CODE
             fi
           fi
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Populate DynamoDB with Initial Data
+        run: |
+          echo "Inserting initial data into table: prp-db-org-policy"
+          # Item: sample keyword with version v1
+          aws dynamodb put-item \
+            --table-name prp-db-org-policy \
+            --item '{
+                "services": {"S": "sample keyword"},
+                "version": {"S": "v1"},
+                "approved_policy_actions": {
+                  "M": {
+                    "Version": {"S": "2012-10-17"},
+                    "Statement": {
+                      "L": [{
+                        "M": {
+                          "Action": {
+                            "L": [{"S": "test:sampledata"}]
+                          },
+                          "Resource": {"S": "*"},
+                          "Effect": {"S": "Allow"}
+                        }
+                      }]
+                    }
+                  }
+                }
+              }' \
+            --region ${{ env.AWS_REGION }}
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
