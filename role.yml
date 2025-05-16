@@ -1,90 +1,135 @@
----
-AWSTemplateFormatVersion: "2010-09-09"
-Description: >
-  CloudFormation template to create an IAM Role for GitHub OIDC integration
-  with specific permissions and restrictions.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to create a DynamoDB table (prp-db-org-policy) with sort key versioning (lowercase attributes) and AWS Backup with 90-day retention
+
+Parameters:
+  TableName:
+    Type: String
+    Default: prp-db-org-policy
+    Description: Name of the DynamoDB table
+  BackupVaultName:
+    Type: String
+    Default: PrpDbOrgPolicyBackupVault
+    Description: Name of the AWS Backup vault
+  BackupPlanName:
+    Type: String
+    Default: PrpDbOrgPolicyBackupPlan
+    Description: Name of the AWS Backup plan
 
 Resources:
-  GithubTrustRole:
-    Type: "AWS::IAM::Role"
+  # DynamoDB Table
+  ServicesTable:
+    Type: AWS::DynamoDB::Table
     Properties:
-      RoleName: "GithubTrustRole" # Name of the IAM Role
+      TableName: !Ref TableName
+      AttributeDefinitions:
+        - AttributeName: services
+          AttributeType: S
+        - AttributeName: version
+          AttributeType: S
+        - AttributeName: approved_policy_actions
+          AttributeType: S
+      KeySchema:
+        - AttributeName: services
+          KeyType: HASH
+        - AttributeName: version
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: false
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # AWS Backup Vault
+  BackupVault:
+    Type: AWS::Backup::BackupVault
+    Properties:
+      BackupVaultName: !Ref BackupVaultName
+
+  # AWS Backup Plan
+  BackupPlan:
+    Type: AWS::Backup::BackupPlan
+    DependsOn: BackupVault
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Ref BackupPlanName
+        BackupPlanRule:
+          - RuleName: DailyBackup90DayRetention
+            TargetBackupVault: !Ref BackupVaultName
+            ScheduleExpression: cron(0 5 ? * * *)
+            StartWindowMinutes: 60
+            CompletionWindowMinutes: 180
+            Lifecycle:
+              DeleteAfterDays: 90
+
+  # IAM Role for AWS Backup
+  BackupRole:
+    Type: AWS::IAM::Role
+    Properties:
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
-          - Effect: "Allow"
+          - Effect: Allow
             Principal:
-              Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
-            Action: "sts:AssumeRoleWithWebIdentity" 
-            Condition:
-              StringEquals:
-                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" 
-            StringLike:
-              "token.actions.githubusercontent.com:sub":
-                - "repo:CBA-General/aws-ddb-tetris-tarv2"
-                - "repo:CBA-General/CBA-General/aws-tetris-cicd"
-    Policies:
-      - PolicyName: "AllowAssumeRole" 
-        PolicyDocument:
-          Version: "2012-10-17"
-          Statement:
-            - Effect: "Allow"
-              Action:
-                - "sts:AssumeRole" 
-                - "sts:TagSession" 
-              Resource: !Sub arn:aws:iam::${AWS::AccountId}:role/GHA-CICD
-      - PolicyName: "DenyOutsideAccess" 
-        PolicyDocument:
-          Version: "2012-10-17"
-          Statement:
-            - Effect: "Deny"
-              Action: "*" 
-              Resource: "*" 
-              Condition:
-                StringNotEquals:
-                  "aws:SourceVpc":
-                    - "vpc-0ebb4ee6c9c0859a3" # Restrict access to this VPC
-GithubCICD:
-  Type: 'AWS::IAM::Role'
-  Properties:
-    RoleName: 'GHA-CICD'
-    ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/AdministratorAccess
-    AssumeRolePolicyDocument:
-      Version: '2012-10-17'
-      Statement:
-        - Action: 
-            - 'sts:AssumeRole'
-            - 'sts:TagSession'
-          Effect: Allow
-          Principal:
-            AWS: !GetAtt GithubTrustRole.Arn
+              Service: backup.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBBackupPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:DescribeTable
+                  - dynamodb:ExportTableToPointInTime
+                  - dynamodb:DescribeContinuousBackups
+                  - dynamodb:DescribeBackup
+                  - dynamodb:CreateBackup
+                Resource: !GetAtt ServicesTable.Arn
+              - Effect: Allow
+                Action:
+                  - backup:StartBackupJob
+                  - backup:DescribeBackupVault
+                  - backup:GetBackupVaultNotifications
+                  - backup:PutBackupVaultNotifications
+                  - backup:PutBackupVaultAccessPolicy
+                  - backup:GetBackupVaultAccessPolicy
+                Resource: !Sub arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${BackupVaultName}
+              - Effect: Allow
+                Action:
+                  - tag:GetResources
+                  - tag:TagResources
+                  - tag:UntagResources
+                Resource: '*'
+
+  # Backup Selection
+  BackupSelection:
+    Type: AWS::Backup::BackupSelection
+    DependsOn: BackupPlan
+    Properties:
+      BackupPlanId: !Ref BackupPlan
+      BackupSelection:
+        SelectionName: ServicesTableBackupSelection
+        IamRoleArn: !GetAtt BackupRole.Arn
+        Resources:
+          - !GetAtt ServicesTable.Arn
 
 Outputs:
-  GithubTrustRoleArn:
-    Description: "The ARN of the GitHub OIDC Role"
-    Value: !GetAtt GithubTrustRole.Arn
-
-
-Resources:
-  NonProdSGStack:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: !Sub 'https://s3.${AWS::Region}.amazonaws.com/${TemplateLocation}/sg-test-custom.yml'
-      Parameters:
-        VpcId: !Ref VPCId
-        IcSGId: !Ref IcSGId
-  GithubTrustRole:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: !Sub 'https://s3.${AWS::Region}.amazonaws.com/${TemplateLocation}/feature.yml'
-      Parameters:
-        VpcId: !Ref VPCId
-        IcSGId: !Ref IcSGId
-        # Add any other parameters required by feature.yml here
-
-
-
-  GithubCICDArn:
-    Description: "The ARN of the Github CICD Role"
-    Value: !GetAtt GithubCICD.Arn
+  TableArn:
+    Description: ARN of the DynamoDB table
+    Value: !GetAtt ServicesTable.Arn
+  TableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref TableName
+  StreamArn:
+    Description: ARN of the DynamoDB stream
+    Value: !GetAtt ServicesTable.StreamArn
+  BackupVaultArn:
+    Description: ARN of the AWS Backup vault
+    Value: !Sub arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${BackupVaultName}
+  BackupPlanArn:
+    Description: ARN of AWS Backup plan
+    Value: !Sub arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-plan:${BackupPlanName}
+  
