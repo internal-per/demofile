@@ -1,63 +1,138 @@
-import boto3
-import json
-import sys
-import os
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploys a Lambda function to update prp-db-org-policy DynamoDB table with policies from aws-guardrail-policy-security repo.
 
-dynamodb = boto3.client('dynamodb')
+Parameters:
+  TableName:
+    Type: String
+    Default: prp-db-org-policy
+    Description: Name of the DynamoDB table to store policies.
+  BucketName:
+    Type: String
+    Default: guardrail-policies-bucket
+    Description: Name of the S3 bucket to store policy files.
 
-def get_latest_version(table_name, service):
-    """Retrieve the latest version for a service from the DynamoDB table."""
-    response = dynamodb.query(
-        TableName=table_name,
-        KeyConditionExpression='services = :s',
-        ExpressionAttributeValues={':s': {'S': service}},
-    )
-    items = response.get('Items', [])
-    if not items:
-        return None
-    # Extract numerical versions (e.g., 'V1' -> 1)
-    versions = [int(item['version']['S'][1:]) for item in items]
-    max_version = max(versions)
-    return f'V{max_version}'
+Resources:
+  PolicyUpdateLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: GuardrailPolicyUpdate
+      Handler: index.handler
+      Runtime: python3.9
+      Timeout: 300
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import urllib.parse
+          from decimal import Decimal
 
-def get_next_version(current_version):
-    """Generate the next version number."""
-    if not current_version:
-        return 'V1'
-    num = int(current_version[1:])
-    return f'V{num + 1}'
+          dynamodb = boto3.resource('dynamodb')
+          s3 = boto3.client('s3')
 
-def update_dynamodb(file_path, table_name):
-    """Update the DynamoDB table with the new service version."""
-    # Extract service name (e.g., 'data/ec2.json' -> 'Ec2')
-    service = os.path.splitext(os.path.basename(file_path))[0].capitalize()
-    
-    # Read JSON data
-    with open(file_path, 'r') as f:
-        data = json.load(f)
-    
-    # Get and increment version
-    latest_version = get_latest_version(table_name, service)
-    next_version = get_next_version(latest_version)
-    
-    # Prepare item (all values as strings for simplicity)
-    item = {
-        'services': {'S': service},
-        'version': {'S': next_version}
-    }
-    for key, value in data.items():
-        item[key] = {'S': str(value)}  # Adjust if other types are needed
-    
-    # Insert into DynamoDB with a condition to prevent overwriting
-    dynamodb.put_item(
-        TableName=table_name,
-        Item=item,
-        ConditionExpression='attribute_not_exists(services) AND attribute_not_exists(version)'
-    )
-    print(f"Inserted {service} version {next_version} into {table_name}")
+          def handler(event, context):
+              try:
+                  table_name = event.get('table_name', 'prp-db-org-policy')
+                  bucket_name = event.get('bucket_name', 'guardrail-policies-bucket')
+                  table = dynamodb.Table(table_name)
 
-if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        print("Usage: python update_dynamodb.py <file_path> <table_name>")
-        sys.exit(1)
-    update_dynamodb(sys.argv[1], sys.argv[2])
+                  # List policy files in S3 bucket (policies/ folder)
+                  response = s3.list_objects_v2(Bucket=bucket_name, Prefix='policies/')
+                  if 'Contents' not in response:
+                      return {'statusCode': 200, 'body': 'No policy files found.'}
+
+                  for obj in response['Contents']:
+                      key = obj['Key']
+                      if not key.endswith('.json'):
+                          continue
+
+                      # Read policy file
+                      policy_obj = s3.get_object(Bucket=bucket_name, Key=key)
+                      policy_data = json.loads(policy_obj['Body'].read().decode('utf-8'))
+                      service_name = key.split('/')[-1].replace('.json', '')
+
+                      # Query DynamoDB for latest version
+                      response = table.query(
+                          KeyConditionExpression='services = :s',
+                          ExpressionAttributeValues={':s': service_name},
+                          ScanIndexForward=False,
+                          Limit=1
+                      )
+                      latest_version = 'v0'
+                      if response.get('Items'):
+                          latest_version = response['Items'][0]['version']
+                          # Increment version (e.g., v1 -> v2)
+                          version_num = int(latest_version.replace('v', '')) + 1
+                          new_version = f'v{version_num}'
+                      else:
+                          new_version = 'v1'
+
+                      # Insert new item
+                      table.put_item(
+                          Item={
+                              'services': service_name,
+                              'version': new_version,
+                              'approved_policy_actions': {
+                                  'Version': policy_data['Version'],
+                                  'Statement': policy_data['Statement']
+                              }
+                          }
+                      )
+
+                  return {'statusCode': 200, 'body': 'Policies updated successfully.'}
+              except Exception as e:
+                  return {'statusCode': 500, 'body': f'Error: {str(e)}'}
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TableName
+          BUCKET_NAME: !Ref BucketName
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: GuardrailPolicyUpdateRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaDynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:PutItem
+                Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::${BucketName}
+                  - !Sub arn:aws:s3:::${BucketName}/*
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/GuardrailPolicyUpdate:*
+
+  PolicyBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      VersioningConfiguration:
+        Status: Enabled
+
+Outputs:
+  LambdaArn:
+    Description: ARN of the policy update Lambda function
+    Value: !GetAtt PolicyUpdateLambda.Arn
+  BucketName:
+    Description: Name of the S3 bucket for policy files
+    Value: !Ref BucketName

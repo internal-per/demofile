@@ -1,0 +1,74 @@
+name: Update Policies in DynamoDB
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  update-policies:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    environment: dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -i https://artifactory.internal.cba/api/pypi/org.python.pypi/simple/ --upgrade awscli
+        shell: bash
+
+      - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
+        uses: aws-actions/configure-aws-credentials@v2.2.0
+        with:
+          role-to-assume: ${{ secrets.GHA_TRUST_ROLE_ARN }}
+          role-session-name: "GitHubActions"
+          aws-region: us-east-1
+
+      - name: Configure AWS credentials (AssumeRole)
+        uses: aws-actions/configure-aws-credentials@v2.2.0
+        with:
+          role-to-assume: ${{ secrets.GHA_CICD_ROLE_ARN }}
+          role-session-name: "GitHubActions"
+          aws-region: us-east-1
+          role-chaining: true
+
+      - name: Fetch AWS Region
+        run: |
+          REGION=$(aws sts get-caller-identity --query 'Arn' --output text | cut -d':' -f4)
+          if [ -z "$REGION" ]; then
+            echo "Failed to fetch region, defaulting to ap-southeast-2"
+            REGION="ap-southeast-2"
+          fi
+          echo "AWS_REGION=$REGION" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Sync policies to S3
+        run: |
+          aws s3 sync policies/ s3://guardrail-policies-bucket-${{ env.AWS_REGION }}-${{ github.sha }}/policies/ --region ${{ env.AWS_REGION }}
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      - name: Invoke Lambda to update DynamoDB
+        run: |
+          aws lambda invoke \
+            --function-name GuardrailPolicyUpdate \
+            --payload '{"table_name": "prp-db-org-policy", "bucket_name": "guardrail-policies-bucket-${{ env.AWS_REGION }}-${{ github.sha }}"}' \
+            --region ${{ env.AWS_REGION }} \
+            response.json
+          cat response.json
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
