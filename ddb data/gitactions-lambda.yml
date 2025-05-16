@@ -1,12 +1,9 @@
-name: Deploy TARV2 DynamoDB Stacks
+name: Deploy Guardrail Lambda
 
 on:
   push:
     branches:
-      - '*'
-  pull_request:
-    branches:
-      - '*'
+      - main
   workflow_dispatch:
     inputs:
       environment:
@@ -20,27 +17,14 @@ on:
         type: string
         default: "3.11"
 
-env:
-  AWS_REGION: "ap-southeast-2"
-
 permissions:
-  id-token: write # This is required for requesting the JWT
-  contents: read # This is for repo checkout
+  id-token: write
+  contents: write
 
 jobs:
-  build-test-deploy:
-    runs-on: default
+  deploy-lambda:
+    runs-on: ubuntu-latest
     environment: ${{ inputs.environment || github.ref_name }}
-
-    strategy:
-      matrix:
-        template:
-          - prp-db.yml
-          # Add more CFN templates if needed, e.g.:
-          # - other-dynamodb.yml
-        account:
-          - dev
-      fail-fast: false
 
     steps:
       - name: Checkout repository
@@ -60,26 +44,48 @@ jobs:
       - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
         uses: aws-actions/configure-aws-credentials@v2.2.0
         with:
-          role-to-assume: "arn:aws:iam::<account id>:role/GHA-Trust"
+          role-to-assume: ${{ secrets.GHA_TRUST_ROLE_ARN }}
           role-session-name: "GitHubActions"
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
 
       - name: Configure AWS credentials (AssumeRole)
         uses: aws-actions/configure-aws-credentials@v2.2.0
         with:
-          role-to-assume: "arn:aws:iam::<account id>:role/GHA-CICD"
+          role-to-assume: ${{ secrets.GHA_CICD_ROLE_ARN }}
           role-session-name: "GitHubActions"
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
           role-chaining: true
+
+      - name: Fetch AWS Region
+        run: |
+          REGION=$(aws sts get-caller-identity --query 'Arn' --output text | cut -d':' -f4)
+          if [ -z "$REGION" ]; then
+            echo "Failed to fetch region, defaulting to ap-southeast-2"
+            REGION="ap-southeast-2"
+          fi
+          echo "AWS_REGION=$REGION" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Validate CloudFormation Template
+        run: |
+          echo "Validating template: guardrail-lambda.yml"
+          aws cloudformation validate-template \
+            --template-body file://cloudformation/guardrail-lambda.yml \
+            --region ${{ env.AWS_REGION }}
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
 
       - name: Deploy CloudFormation Stack
         run: |
-          echo "Deploying stack for template: ${{ matrix.template }}"
+          echo "Deploying stack for template: guardrail-lambda.yml"
           set +e
-          STACK_NAME="tarv2-dynamodb-${{ matrix.account }}-${{ matrix.template }}-stack"
+          STACK_NAME="guardrail-lambda-stack"
           aws cloudformation deploy \
-            --template-file cloudformation/${{ matrix.template }} \
+            --template-file cloudformation/guardrail-lambda.yml \
             --stack-name $STACK_NAME \
+            --parameter-overrides \
+              TableName=prp-db-org-policy \
+              BucketName=guardrail-policies-bucket-${{ env.AWS_REGION }}-${{ github.sha }} \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --region ${{ env.AWS_REGION }} \
             --no-fail-on-empty-changeset
