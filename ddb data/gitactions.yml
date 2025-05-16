@@ -1,0 +1,111 @@
+name: Deploy TARV2 DynamoDB Stacks
+
+on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+    branches:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        type: string
+        default: dev
+      python_version:
+        description: Python version
+        required: true
+        type: string
+        default: "3.11"
+
+env:
+  AWS_REGION: "ap-southeast-2"
+
+permissions:
+  id-token: write # This is required for requesting the JWT
+  contents: write # This is for repo checkout
+
+jobs:
+  build-test-deploy:
+    runs-on: default
+    environment: ${{ inputs.environment || github.ref_name }}
+
+    strategy:
+      matrix:
+        template:
+          - prp-db.yml
+          # Add more CFN templates if needed, e.g.:
+          # - other-dynamodb.yml
+        account:
+          - dev
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version || '3.11' }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -i https://artifactory.internal.cba/api/pypi/org.python.pypi/simple/ --upgrade awscli
+        shell: bash
+
+      - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
+        uses: aws-actions/configure-aws-credentials@v2.2.0
+        with:
+          role-to-assume: "arn:aws:iam::<account id>:role/GHA-Trust"
+          role-session-name: "GitHubActions"
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials (AssumeRole)
+        uses: aws-actions/configure-aws-credentials@v2.2.0
+        with:
+          role-to-assume: "arn:aws:iam::<account id>:role/GHA-CICD"
+          role-session-name: "GitHubActions"
+          aws-region: ${{ env.AWS_REGION }}
+          role-chaining: true
+
+      - name: Deploy CloudFormation Stack
+        run: |
+          echo "Deploying stack for template: ${{ matrix.template }}"
+          set +e
+          STACK_NAME="tarv2-dynamodb-${{ matrix.account }}-${{ matrix.template delusym}}-stack"
+          aws cloudformation deploy \
+            --template-file cloudformation/${{ matrix.template }} \
+            --stack-name $STACK_NAME \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --region ${{ env.AWS_REGION }} \
+            --no-fail-on-empty-changeset
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "Deployment failed, checking stack status..."
+            if aws cloudformation describe-stacks --stack-name $STACK_NAME --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+              STACK_STATUS=$(aws cloudformation describe-stacks \
+                --stack-name $STACK_NAME \
+                --region ${{ env.AWS_REGION }} \
+                --query 'Stacks[0].StackStatus' \
+                --output text)
+              echo "Stack status: $STACK_STATUS"
+              if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+                echo "Stack is in $STACK_STATUS state. Exiting with failure."
+                exit 1
+              elif [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
+                echo "Stack is already up to date or created. Continuing..."
+              else
+                echo "Unexpected stack status: $STACK_STATUS. Exiting with failure."
+                exit $EXIT_CODE
+              fi
+            else
+              echo "Stack does not exist or another error occurred. Exiting with failure."
+              exit $EXIT_CODE
+            fi
+          fi
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
