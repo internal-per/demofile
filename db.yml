@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CloudFormation template to create a DynamoDB table (prp-db-org-policy) with sort key versioning (lowercase attributes) and AWS Backup with 90-day retention
+Description: CloudFormation template to create a DynamoDB table (prp-db-org-policy) with sort key versioning, GSI on approved_policy_actions.Statement[0].Effect for scalability, and AWS Backup with 90-day retention
 
 Parameters:
   TableName:
@@ -16,7 +16,6 @@ Parameters:
     Description: Name of the AWS Backup plan
 
 Resources:
-  # DynamoDB Table
   ServicesTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -26,7 +25,7 @@ Resources:
           AttributeType: S
         - AttributeName: version
           AttributeType: S
-        - AttributeName: approved_policy_actions
+        - AttributeName: "approved_policy_actions.Statement[0].Effect"
           AttributeType: S
       KeySchema:
         - AttributeName: services
@@ -41,14 +40,19 @@ Resources:
         Enabled: false
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
+      GlobalSecondaryIndexes:
+        - IndexName: PolicyEffectIndex
+          KeySchema:
+            - AttributeName: "approved_policy_actions.Statement[0].Effect"
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
 
-  # AWS Backup Vault
   BackupVault:
     Type: AWS::Backup::BackupVault
     Properties:
       BackupVaultName: !Ref BackupVaultName
 
-  # AWS Backup Plan
   BackupPlan:
     Type: AWS::Backup::BackupPlan
     DependsOn: BackupVault
@@ -64,7 +68,6 @@ Resources:
             Lifecycle:
               DeleteAfterDays: 90
 
-  # IAM Role for AWS Backup
   BackupRole:
     Type: AWS::IAM::Role
     Properties:
@@ -96,7 +99,7 @@ Resources:
                   - backup:PutBackupVaultNotifications
                   - backup:PutBackupVaultAccessPolicy
                   - backup:GetBackupVaultAccessPolicy
-                Resource: !Sub arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${BackupVaultName}
+                Resource: !Sub "arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${BackupVaultName}"
               - Effect: Allow
                 Action:
                   - tag:GetResources
@@ -104,7 +107,6 @@ Resources:
                   - tag:UntagResources
                 Resource: '*'
 
-  # Backup Selection
   BackupSelection:
     Type: AWS::Backup::BackupSelection
     DependsOn: BackupPlan
@@ -128,7 +130,7 @@ Outputs:
     Value: !GetAtt ServicesTable.StreamArn
   BackupVaultArn:
     Description: ARN of the AWS Backup vault
-    Value: !Sub arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${BackupVaultName}
+    Value: !Sub "arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-vault:${BackupVaultName}"
   BackupPlanArn:
-    Description: ARN60 Description: ARN of the AWS Backup plan
-    Value: !Sub arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-plan:${BackupPlanName}
+    Description: ARN of AWS Backup plan
+    Value: !Sub "arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-plan:${BackupPlanName}"
