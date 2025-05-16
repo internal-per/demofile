@@ -8,11 +8,11 @@ Parameters:
     Description: Name of the DynamoDB table
   BackupVaultName:
     Type: String
-    Default: PrpDbOrgPolicyBackupVault
+    Default: prp-OrgPolicy-BackupVault
     Description: Name of the AWS Backup vault
   BackupPlanName:
     Type: String
-    Default: PrpDbOrgPolicyBackupPlan
+    Default: prp-orgpolicy-BackupPlan
     Description: Name of the AWS Backup plan
 
 Resources:
