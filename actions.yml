@@ -18,11 +18,11 @@ on:
         description: Python version
         required: true
         type: string
-        default: 3.11
+        default: "3.11"
 
 permissions:
   id-token: write # Allow OIDC token for AWS credentials
-  contents: read # Read repository contents
+  contents: write # Allow repository contents
 
 jobs:
   build-test-deploy:
@@ -60,6 +60,8 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-southeast-2
           role-session-name: GitHubActions-tarv2-prp-ddb
+
+          
 
       - name: Deploy CloudFormation Stack
         run: |
