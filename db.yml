@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CloudFormation template to create a DynamoDB table (prp-db-org-policy) with sort key versioning, GSI on approved_policy_actions.Statement[0].Effect for scalability, and AWS Backup with 90-day retention
+Description: CloudFormation template to create a DynamoDB table (prp-db-org-policy) with sort key versioning, enhanced GSI for approved_policy_actions scalability, AWS Backup with 90-day retention, and backup role name parameter
 
 Parameters:
   TableName:
@@ -14,6 +14,10 @@ Parameters:
     Type: String
     Default: prp-orgpolicy-BackupPlan
     Description: Name of the AWS Backup plan
+  BackupRoleName:
+    Type: String
+    Default: PrpOrgPolicyBackupRole
+    Description: Name of the IAM role for AWS Backup
 
 Resources:
   ServicesTable:
@@ -43,8 +47,10 @@ Resources:
       GlobalSecondaryIndexes:
         - IndexName: PolicyEffectIndex
           KeySchema:
-            - AttributeName: "approved_policy_actions.Statement[0].Effect"
+            - AttributeName: services
               KeyType: HASH
+            - AttributeName: "approved_policy_actions.Statement[0].Effect"
+              KeyType: RANGE
           Projection:
             ProjectionType: ALL
 
@@ -71,6 +77,7 @@ Resources:
   BackupRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Ref BackupRoleName
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -134,3 +141,6 @@ Outputs:
   BackupPlanArn:
     Description: ARN of AWS Backup plan
     Value: !Sub "arn:aws:backup:${AWS::Region}:${AWS::AccountId}:backup-plan:${BackupPlanName}"
+  BackupRoleArn:
+    Description: ARN of the AWS Backup role
+    Value: !GetAtt BackupRole.Arn
