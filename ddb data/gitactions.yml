@@ -25,7 +25,7 @@ env:
 
 permissions:
   id-token: write # This is required for requesting the JWT
-  contents: write # This is for repo checkout
+  contents: read # This is for repo checkout
 
 jobs:
   build-test-deploy:
@@ -76,7 +76,7 @@ jobs:
         run: |
           echo "Deploying stack for template: ${{ matrix.template }}"
           set +e
-          STACK_NAME="tarv2-dynamodb-${{ matrix.account }}-${{ matrix.template delusym}}-stack"
+          STACK_NAME="tarv2-dynamodb-${{ matrix.account }}-${{ matrix.template }}-stack"
           aws cloudformation deploy \
             --template-file cloudformation/${{ matrix.template }} \
             --stack-name $STACK_NAME \
