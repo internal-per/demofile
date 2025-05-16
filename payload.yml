@@ -1,0 +1,20 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "acm:AddTagsToCertificate",
+                "acm:DeleteCertificate",
+                "acm:ImportCertificate",
+                "acm:PutAccountConfiguration",
+                "acm:RemoveTagsFromCertificate",
+                "acm:UpdateCertificateOptions",
+                "acm:Describe*",
+                "acm:Get*",
+                "acm:List*"
+            ],
+            "Resource": "*",
+            "Effect": "Allow"
+        }
+    ]
+}
