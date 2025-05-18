@@ -4,15 +4,18 @@ on:
   pull_request:
     types: [closed]
     branches:
-      - main
+      - dev
 
+env:
+  AWS_REGION: "ap-southeast-2"
+      
 permissions:
   id-token: write
   contents: write
 
 jobs:
   update-policies:
-    runs-on: ubuntu-latest
+    runs-on: default
     if: github.event.pull_request.merged == true
     environment: dev
 
@@ -36,28 +39,15 @@ jobs:
         with:
           role-to-assume: ${{ secrets.GHA_TRUST_ROLE_ARN }}
           role-session-name: "GitHubActions"
-          aws-region: us-east-1
+          aws-region: ap-southeast-2
 
       - name: Configure AWS credentials (AssumeRole)
         uses: aws-actions/configure-aws-credentials@v2.2.0
         with:
           role-to-assume: ${{ secrets.GHA_CICD_ROLE_ARN }}
           role-session-name: "GitHubActions"
-          aws-region: us-east-1
+          aws-region: ap-southeast-2
           role-chaining: true
-
-      - name: Fetch AWS Region
-        run: |
-          REGION=$(aws sts get-caller-identity --query 'Arn' --output text | cut -d':' -f4)
-          if [ -z "$REGION" ]; then
-            echo "Failed to fetch region, defaulting to ap-southeast-2"
-            REGION="ap-southeast-2"
-          fi
-          echo "AWS_REGION=$REGION" >> $GITHUB_ENV
-          # Truncate SHA to 8 characters
-          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-8)
-          echo "BUCKET_NAME=grd-pol-${REGION}-${SHORT_SHA}" >> $GITHUB_ENV
-        shell: bash
 
       - name: Sync policies to S3
         run: |
