@@ -1,23 +1,33 @@
-name: Update Policies in DynamoDB
+name: Deploy Guardrail Lambda
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches:
-      - dev
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy"
+        required: true
+        type: string
+        default: dev
+      python_version:
+        description: Python version
+        required: true
+        type: string
+        default: "3.11"
 
 env:
-  AWS_REGION: "ap-southeast-2"
-      
+  AWS_REGION: ap-southeast-2
+
 permissions:
   id-token: write
   contents: write
 
 jobs:
-  update-policies:
+  deploy-lambda:
     runs-on: default
-    if: github.event.pull_request.merged == true
-    environment: dev
+    environment: ${{ inputs.environment || github.ref_name }}
 
     steps:
       - name: Checkout repository
@@ -26,7 +36,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ inputs.python_version || '3.11' }}
 
       - name: Install dependencies
         run: |
@@ -39,29 +49,69 @@ jobs:
         with:
           role-to-assume: ${{ secrets.GHA_TRUST_ROLE_ARN }}
           role-session-name: "GitHubActions"
-          aws-region: ap-southeast-2
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Configure AWS credentials (AssumeRole)
         uses: aws-actions/configure-aws-credentials@v2.2.0
         with:
           role-to-assume: ${{ secrets.GHA_CICD_ROLE_ARN }}
           role-session-name: "GitHubActions"
-          aws-region: ap-southeast-2
+          aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
 
-      - name: Sync policies to S3
+      - name: Set Bucket Name
         run: |
-          aws s3 sync policies/ s3://${{ env.BUCKET_NAME }}/policies/ --region ${{ env.AWS_REGION }}
+          # Truncate SHA to 8 characters
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-8)
+          echo "BUCKET_NAME=grd-pol-ap-southeast-2-${SHORT_SHA}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Validate CloudFormation Template
+        run: |
+          echo "Validating template: guardrail-lambda.yml"
+          aws cloudformation validate-template \
+            --template-body file://cloudformation/guardrail-lambda.yml \
+            --region ${{ env.AWS_REGION }}
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
-      - name: Invoke Lambda to update DynamoDB
+      - name: Deploy CloudFormation Stack
         run: |
-          aws lambda invoke \
-            --function-name GuardrailPolicyUpdate \
-            --payload '{"table_name": "prp-db-org-policy", "bucket_name": "${{ env.BUCKET_NAME }}"}' \
+          echo "Deploying stack for template: guardrail-lambda.yml"
+          set +e
+          STACK_NAME="guardrail-lambda-stack"
+          aws cloudformation deploy \
+            --template-file cloudformation/guardrail-lambda.yml \
+            --stack-name $STACK_NAME \
+            --parameter-overrides \
+              TableName=prp-db-org-policy \
+              BucketName=${{ env.BUCKET_NAME }} \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --region ${{ env.AWS_REGION }} \
-            response.json
-          cat response.json
+            --no-fail-on-empty-changeset
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "Deployment failed, checking stack status..."
+            if aws cloudformation describe-stacks --stack-name $STACK_NAME --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+              STACK_STATUS=$(aws cloudformation describe-stacks \
+                --stack-name $STACK_NAME \
+                --region ${{ env.AWS_REGION }} \
+                --query 'Stacks[0].StackStatus' \
+                --output text)
+              echo "Stack status: $STACK_STATUS"
+              if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
+                echo "Stack is in $STACK_STATUS state. Exiting with failure."
+                exit 1
+              elif [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
+                echo "Stack is already up to date or created. Continuing..."
+              else
+                echo "Unexpected stack status: $STACK_STATUS. Exiting with failure."
+                exit $EXIT_CODE
+              fi
+            else
+              echo "Stack does not exist or another error occurred. Exiting with failure."
+              exit $EXIT_CODE
+            fi
+          fi
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
