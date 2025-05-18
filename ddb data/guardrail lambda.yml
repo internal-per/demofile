@@ -24,40 +24,112 @@ Resources:
         ZipFile: |
           import json
           import boto3
-          import urllib.parse
-          from decimal import Decimal
+          from botocore.exceptions import ClientError
 
+          # Initialize AWS clients
           dynamodb = boto3.resource('dynamodb')
           s3 = boto3.client('s3')
 
-          def handler(event, context):
+          def check_dynamodb_table_exists(table_name):
+              """
+              Check if the specified DynamoDB table exists in the account.
+              
+              Args:
+                  table_name (str): Name of the DynamoDB table.
+                  
+              Raises:
+                  ValueError: If the table does not exist.
+              """
               try:
+                  dynamodb.meta.client.describe_table(TableName=table_name)
+              except ClientError as e:
+                  if e.response['Error']['Code'] == 'ResourceNotFoundException':
+                      raise ValueError(f"DynamoDB table '{table_name}' does not exist in the account.")
+                  raise
+
+          def extract_service_from_actions(policy_data):
+              """
+              Extract the service name from IAM policy actions (e.g., 's3:CreateBucket' -> 's3').
+              
+              Args:
+                  policy_data (dict): Policy JSON with 'Statement' containing 'Action'.
+                  
+              Returns:
+                  str: Service name (e.g., 's3').
+                  
+              Raises:
+                  ValueError: If no valid service name is found.
+              """
+              statements = policy_data.get('Statement', [])
+              if not statements:
+                  raise ValueError("Policy has no 'Statement' field.")
+              
+              for statement in statements:
+                  actions = statement.get('Action', [])
+                  # Handle single action (str) or multiple actions (list)
+                  if isinstance(actions, str):
+                      actions = [actions]
+                  elif not isinstance(actions, list):
+                      continue
+                  
+                  for action in actions:
+                      if ':' in action and action != '*':
+                          service = action.split(':')[0].lower()
+                          if service:
+                              return service
+              
+              raise ValueError("No valid service name found in policy actions.")
+
+          def handler(event, context):
+              """
+              Lambda handler to update prp-db-org-policy DynamoDB table with policies from S3.
+              
+              Args:
+                  event: Dict with 'table_name' (DynamoDB table) and 'bucket_name' (S3 bucket).
+                  context: Lambda context object.
+              
+              Returns:
+                  Dict with 'statusCode' (200/500) and 'body' (success/error message).
+              """
+              try:
+                  # Get table and bucket names from event, with defaults
                   table_name = event.get('table_name', 'prp-db-org-policy')
                   bucket_name = event.get('bucket_name', 'grd-pol')
+
+                  # Check if DynamoDB table exists
+                  check_dynamodb_table_exists(table_name)
                   table = dynamodb.Table(table_name)
 
-                  # List policy files in S3 bucket (policies/ folder)
+                  # List policy files in S3 bucket under policies/ prefix
                   response = s3.list_objects_v2(Bucket=bucket_name, Prefix='policies/')
                   if 'Contents' not in response:
-                      return {'statusCode': 200, 'body': 'No policy files found.'}
+                      return {
+                          'statusCode': 200,
+                          'body': f'No policy files found in s3://{bucket_name}/policies/.'
+                      }
 
+                  # Process each policy file
                   for obj in response['Contents']:
                       key = obj['Key']
                       if not key.endswith('.json'):
-                          continue
+                          continue  # Skip non-JSON files
 
-                      # Read policy file
+                      # Read policy file from S3
                       policy_obj = s3.get_object(Bucket=bucket_name, Key=key)
                       policy_data = json.loads(policy_obj['Body'].read().decode('utf-8'))
-                      service_name = key.split('/')[-1].replace('.json', '')
+                      
+                      # Extract service name from actions
+                      service_name = extract_service_from_actions(policy_data)
 
-                      # Query DynamoDB for latest version
+                      # Query DynamoDB for the latest version of this service
                       response = table.query(
                           KeyConditionExpression='services = :s',
                           ExpressionAttributeValues={':s': service_name},
-                          ScanIndexForward=False,
+                          ScanIndexForward=False,  # Sort descending to get latest version
                           Limit=1
                       )
+                      
+                      # Determine new version
                       latest_version = 'v0'
                       if response.get('Items'):
                           latest_version = response['Items'][0]['version']
@@ -67,7 +139,7 @@ Resources:
                       else:
                           new_version = 'v1'
 
-                      # Insert new item
+                      # Insert new item into DynamoDB
                       table.put_item(
                           Item={
                               'services': service_name,
@@ -79,9 +151,16 @@ Resources:
                           }
                       )
 
-                  return {'statusCode': 200, 'body': 'Policies updated successfully.'}
+                  return {
+                      'statusCode': 200,
+                      'body': f'Policies updated successfully in DynamoDB table {table_name}.'
+                  }
+              
               except Exception as e:
-                  return {'statusCode': 500, 'body': f'Error: {str(e)}'}
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error updating policies: {str(e)}'
+                  }
       Environment:
         Variables:
           TABLE_NAME: !Ref TableName
@@ -107,6 +186,7 @@ Resources:
                 Action:
                   - dynamodb:Query
                   - dynamodb:PutItem
+                  - dynamodb:DescribeTable
                 Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
               - Effect: Allow
                 Action:
