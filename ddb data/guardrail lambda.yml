@@ -17,7 +17,7 @@ Resources:
     Properties:
       FunctionName: GuardrailPolicyUpdate
       Handler: index.handler
-      Runtime: python3.9
+      Runtime: python3.11
       Timeout: 300
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
