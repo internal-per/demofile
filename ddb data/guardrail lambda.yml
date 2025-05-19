@@ -27,11 +27,9 @@ Resources:
           from botocore.exceptions import ClientError
           import logging
 
-          # Set up logging
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
 
-          # Initialize AWS clients
           dynamodb = boto3.resource('dynamodb')
           s3 = boto3.client('s3')
 
@@ -94,32 +92,29 @@ Resources:
                       policy_data = json.loads(policy_obj['Body'].read().decode('utf-8'))
                       logger.info(f"Policy data: {json.dumps(policy_data)}")
                       service_name = extract_service_from_actions(policy_data)
-                      logger.info(f"Querying DynamoDB for service: {service_name}")
-                      response = table.query(
-                          KeyConditionExpression='services = :s',
-                          ExpressionAttributeValues={':s': service_name},
-                          ScanIndexForward=False,
-                          Limit=1
-                      )
-                      latest_version = 'v0'
-                      if response.get('Items'):
-                          latest_version = response['Items'][0]['version']
-                          version_num = int(latest_version.replace('v', '')) + 1
+                      logger.info(f"Updating DynamoDB for service: {service_name}")
+                      try:
+                          # Get current item to determine version
+                          response = table.get_item(Key={'services': service_name})
+                          current_version = response.get('Item', {}).get('version', 'v0')
+                          version_num = int(current_version.replace('v', '')) + 1 if current_version.startswith('v') else 1
                           new_version = f'v{version_num}'
-                      else:
-                          new_version = 'v1'
-                      logger.info(f"Writing to DynamoDB: service={service_name}, version={new_version}")
-                      table.put_item(
-                          Item={
-                              'services': service_name,
-                              'version': new_version,
-                              'approved_policy_actions': {
-                                  'Version': policy_data['Version'],
-                                  'Statement': policy_data['Statement']
+                          # Update item with new version and policy
+                          table.update_item(
+                              Key={'services': service_name},
+                              UpdateExpression='SET version = :v, approved_policy_actions = :p',
+                              ExpressionAttributeValues={
+                                  ':v': new_version,
+                                  ':p': {
+                                      'Version': policy_data['Version'],
+                                      'Statement': policy_data['Statement']
+                                  }
                               }
-                          }
-                      )
-                      logger.info(f"Successfully wrote {service_name} version {new_version}")
+                          )
+                          logger.info(f"Successfully updated {service_name} to version {new_version}")
+                      except ClientError as e:
+                          logger.error(f"Error updating DynamoDB for {service_name}: {str(e)}")
+                          raise
                   logger.info("Policy update completed")
                   return {
                       'statusCode': 200,
@@ -151,8 +146,8 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - dynamodb:Query
-                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
                   - dynamodb:DescribeTable
                 Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
               - Effect: Allow
