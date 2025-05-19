@@ -18,3 +18,56 @@
         }
     ]
 }
+
+
+
+{
+    "Version": {
+        "S": "2012-10-17"
+    },
+    "Statement": {
+        "L": [
+            {
+                "M": {
+                    "Resource": {
+                        "S": "*"
+                    },
+                    "Action": {
+                        "L": [
+                            {
+                                "S": "acm:AddTagsToCertificate"
+                            },
+                            {
+                                "S": "acm:DeleteCertificate"
+                            },
+                            {
+                                "S": "acm:ImportCertificate"
+                            },
+                            {
+                                "S": "acm:PutAccountConfiguration"
+                            },
+                            {
+                                "S": "acm:RemoveTagsFromCertificate"
+                            },
+                            {
+                                "S": "acm:UpdateCertificateOptions"
+                            },
+                            {
+                                "S": "acm:Describe*"
+                            },
+                            {
+                                "S": "acm:Get*"
+                            },
+                            {
+                                "S": "acm:List"
+                            }
+                        ]
+                    },
+                    "Effect": {
+                        "S": "Allow"
+                    }
+                }
+            }
+        ]
+    }
+}
