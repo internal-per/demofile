@@ -1,3 +1,14 @@
-Run aws s3 sync policies/ s3://grd-pol-ap-southeast-2-18946de4/policies/ --region ap-southeast-2
-fatal error: An error occurred (NoSuchBucket) when calling the ListObjectsV2 operation: The specified bucket does not exist
-Error: Process completed with exit code 1.
+2025-05-19T02:17:54.277Z
+INIT_START Runtime Version: python:3.11.v73	Runtime Version ARN: arn:aws:lambda:ap-southeast-2::runtime:79377efe727c2c2a431590cea2205bea4713f7099d2a2a0faf6e4f0b57bfca3b
+INIT_START Runtime Version: python:3.11.v73 Runtime Version ARN: arn:aws:lambda:ap-southeast-2::runtime:79377efe727c2c2a431590cea2205bea4713f7099d2a2a0faf6e4f0b57bfca3b
+	
+2025-05-19T02:17:54.742Z
+START RequestId: eedb49f0-f18e-4ca7-86f8-7df5e12cefd0 Version: $LATEST
+START RequestId: eedb49f0-f18e-4ca7-86f8-7df5e12cefd0 Version: $LATEST
+	
+2025-05-19T02:17:55.670Z
+END RequestId: eedb49f0-f18e-4ca7-86f8-7df5e12cefd0
+END RequestId: eedb49f0-f18e-4ca7-86f8-7df5e12cefd0
+	
+2025-05-19T02:17:55.670Z
+REPORT RequestId: eedb49f0-f18e-4ca7-86f8-7df5e12cefd0	Duration: 927.72 ms	Billed Duration: 928 ms	Memory Size: 128 MB	Max Memory Used: 91 MB	Init Duration: 464.86 ms	
