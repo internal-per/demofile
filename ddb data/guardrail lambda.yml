@@ -8,7 +8,7 @@ Parameters:
     Description: Name of the DynamoDB table to store policies.
   BucketName:
     Type: String
-    Default: grd-pol-123456789012  # Replace with your AWS account ID
+    Default: grd-pol-123456789012
     Description: Name of the S3 bucket to store policy files (must be 3-63 characters).
 
 Resources:
@@ -99,16 +99,18 @@ Resources:
                           current_version = response.get('Item', {}).get('version', 'v0')
                           version_num = int(current_version.replace('v', '')) + 1 if current_version.startswith('v') else 1
                           new_version = f'v{version_num}'
-                          # Update item with new version and policy
+                          # Serialize policy_data to JSON string
+                          policy_json = json.dumps({
+                              'Version': policy_data['Version'],
+                              'Statement': policy_data['Statement']
+                          })
+                          # Update item with new version and policy JSON string
                           table.update_item(
                               Key={'services': service_name},
                               UpdateExpression='SET version = :v, approved_policy_actions = :p',
                               ExpressionAttributeValues={
                                   ':v': new_version,
-                                  ':p': {
-                                      'Version': policy_data['Version'],
-                                      'Statement': policy_data['Statement']
-                                  }
+                                  ':p': policy_json
                               }
                           )
                           logger.info(f"Successfully updated {service_name} to version {new_version}")
