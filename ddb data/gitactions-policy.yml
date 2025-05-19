@@ -4,7 +4,11 @@ on:
   pull_request:
     types: [closed]
     branches:
+      - dev
       - main
+
+env:
+  AWS_REGION: ap-southeast-2
 
 permissions:
   id-token: write
@@ -12,7 +16,7 @@ permissions:
 
 jobs:
   update-policies:
-    runs-on: ubuntu-latest
+    runs-on: default
     if: github.event.pull_request.merged == true
     environment: dev
 
@@ -36,29 +40,26 @@ jobs:
         with:
           role-to-assume: ${{ secrets.GHA_TRUST_ROLE_ARN }}
           role-session-name: "GitHubActions"
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Configure AWS credentials (AssumeRole)
         uses: aws-actions/configure-aws-credentials@v2.2.0
         with:
           role-to-assume: ${{ secrets.GHA_CICD_ROLE_ARN }}
           role-session-name: "GitHubActions"
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
 
-      - name: Fetch AWS Region
+      - name: Set Bucket Name
         run: |
-          REGION=$(aws sts get-caller-identity --query 'Arn' --output text | cut -d':' -f4)
-          if [ -z "$REGION" ]; then
-            echo "Failed to fetch region, defaulting to ap-southeast-2"
-            REGION="ap-southeast-2"
-          fi
-          echo "AWS_REGION=$REGION" >> $GITHUB_ENV
+          # Truncate SHA to 8 characters
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-8)
+          echo "BUCKET_NAME=grd-pol-ap-southeast-2-${SHORT_SHA}" >> $GITHUB_ENV
         shell: bash
 
       - name: Sync policies to S3
         run: |
-          aws s3 sync policies/ s3://guardrail-policies-bucket-${{ env.AWS_REGION }}-${{ github.sha }}/policies/ --region ${{ env.AWS_REGION }}
+          aws s3 sync policies/ s3://${{ env.BUCKET_NAME }}/policies/ --region ${{ env.AWS_REGION }}
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
@@ -66,7 +67,7 @@ jobs:
         run: |
           aws lambda invoke \
             --function-name GuardrailPolicyUpdate \
-            --payload '{"table_name": "prp-db-org-policy", "bucket_name": "guardrail-policies-bucket-${{ env.AWS_REGION }}-${{ github.sha }}"}' \
+            --payload '{"table_name": "prp-db-org-policy", "bucket_name": "${{ env.BUCKET_NAME }}"}' \
             --region ${{ env.AWS_REGION }} \
             response.json
           cat response.json
