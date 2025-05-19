@@ -21,7 +21,9 @@ on:
         default: "3.11"
 
 env:
-  AWS_REGION: "ap-southeast-2"
+  AWS_REGION: ap-southeast-2
+  STACK_NAME: tarv2-prp-ddb-stack
+  TABLE_NAME: prp-db-org-policy
 
 permissions:
   id-token: write
@@ -83,21 +85,18 @@ jobs:
         run: |
           echo "Deploying stack for template: ${{ matrix.template }}"
           set +e
-          STACK_NAME="tarv2-prp-ddb-stack"
           aws cloudformation deploy \
             --template-file cloudformation/${{ matrix.template }} \
-            --stack-name $STACK_NAME \
-            --parameter-overrides \
-              BackupRoleName=PrpOrgPolicyBackupRole \
+            --stack-name ${{ env.STACK_NAME }} \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --region ${{ env.AWS_REGION }} \
             --no-fail-on-empty-changeset
           EXIT_CODE=$?
           if [ $EXIT_CODE -ne 0 ]; then
             echo "Deployment failed, checking stack status..."
-            if aws cloudformation describe-stacks --stack-name $STACK_NAME --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            if aws cloudformation describe-stacks --stack-name ${{ env.STACK_NAME }} --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
               STACK_STATUS=$(aws cloudformation describe-stacks \
-                --stack-name $STACK_NAME \
+                --stack-name ${{ env.STACK_NAME }} \
                 --region ${{ env.AWS_REGION }} \
                 --query 'Stacks[0].StackStatus' \
                 --output text)
@@ -121,9 +120,9 @@ jobs:
 
       - name: Populate DynamoDB with Initial Data
         run: |
-          echo "Inserting initial data into table: prp-db-org-policy"
+          echo "Inserting initial data into table: ${{ env.TABLE_NAME }}"
           aws dynamodb put-item \
-            --table-name prp-db-org-policy \
+            --table-name ${{ env.TABLE_NAME }} \
             --item '{
                 "services": {"S": "sample"},
                 "version": {"S": "v1"},
