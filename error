@@ -1,1 +1,3 @@
-Resource handler returned message: "Bucket name should be between 3 and 63 characters long" (RequestToken: becda401-7974-199c-b05a-e899f304eeb2, HandlerErrorCode: GeneralServiceException)
+Run aws s3 sync policies/ s3://grd-pol-ap-southeast-2-18946de4/policies/ --region ap-southeast-2
+fatal error: An error occurred (NoSuchBucket) when calling the ListObjectsV2 operation: The specified bucket does not exist
+Error: Process completed with exit code 1.
