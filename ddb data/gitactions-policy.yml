@@ -25,6 +25,20 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Debug checkout
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Listing files in policies/:"
+          ls -la policies/ || echo "No files found in policies/"
+          if [ -f "policies/acm.json" ]; then
+            echo "acm.json found, contents:"
+            cat policies/acm.json
+          else
+            echo "acm.json not found in policies/"
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -58,7 +72,6 @@ jobs:
           if aws s3api head-bucket --bucket ${{ env.BUCKET_NAME }} --region ${{ env.AWS_REGION }} 2>/dev/null; then
             echo "Bucket ${{ env.BUCKET_NAME }} exists."
             echo "bucket_exists=true" >> $GITHUB_OUTPUT
-            # Clean up existing objects in policies/ to avoid conflicts
             echo "Cleaning up existing objects in s3://${{ env.BUCKET_NAME }}/policies/..."
             aws s3 rm s3://${{ env.BUCKET_NAME }}/policies/ --recursive --region ${{ env.AWS_REGION }} || true
           else
@@ -99,17 +112,27 @@ jobs:
 
       - name: Sync policies to S3
         run: |
-          aws s3 sync policies/ s3://${{ env.BUCKET_NAME }}/policies/ --region ${{ env.AWS_REGION }}
+          echo "Syncing policies/ to s3://${{ env.BUCKET_NAME }}/policies/"
+          aws s3 sync policies/ s3://${{ env.BUCKET_NAME }}/policies/ --region ${{ env.AWS_REGION }} --debug
+          echo "Listing S3 bucket contents after sync:"
+          aws s3 ls s3://${{ env.BUCKET_NAME }}/policies/ --region ${{ env.AWS_REGION }} || echo "No files found in S3 bucket"
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
       - name: Invoke Lambda to update DynamoDB
         run: |
+          echo "Invoking Lambda..."
           aws lambda invoke \
             --function-name GuardrailPolicyUpdate \
             --payload '{"table_name": "prp-db-org-policy", "bucket_name": "${{ env.BUCKET_NAME }}"}' \
             --region ${{ env.AWS_REGION }} \
             response.json
-          cat response.json
+          if [ -f response.json ]; then
+            echo "Lambda response:"
+            cat response.json
+          else
+            echo "Error: response.json not generated"
+            exit 1
+          fi
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
