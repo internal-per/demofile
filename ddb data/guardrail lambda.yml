@@ -25,22 +25,32 @@ Resources:
           import json
           import boto3
           from botocore.exceptions import ClientError
+          import logging
+
+          # Set up logging
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
 
           # Initialize AWS clients
           dynamodb = boto3.resource('dynamodb')
           s3 = boto3.client('s3')
 
           def check_dynamodb_table_exists(table_name):
+              logger.info(f"Checking if DynamoDB table '{table_name}' exists")
               try:
                   dynamodb.meta.client.describe_table(TableName=table_name)
+                  logger.info(f"Table '{table_name}' found")
               except ClientError as e:
+                  logger.error(f"Error checking table: {str(e)}")
                   if e.response['Error']['Code'] == 'ResourceNotFoundException':
                       raise ValueError(f"DynamoDB table '{table_name}' does not exist in the account.")
                   raise
 
           def extract_service_from_actions(policy_data):
+              logger.info("Extracting service from policy actions")
               statements = policy_data.get('Statement', [])
               if not statements:
+                  logger.error("Policy has no 'Statement' field")
                   raise ValueError("Policy has no 'Statement' field.")
               for statement in statements:
                   actions = statement.get('Action', [])
@@ -52,28 +62,39 @@ Resources:
                       if ':' in action and action != '*':
                           service = action.split(':')[0].lower()
                           if service:
+                              logger.info(f"Extracted service: {service}")
                               return service
+              logger.error("No valid service name found in policy actions")
               raise ValueError("No valid service name found in policy actions.")
 
           def handler(event, context):
+              logger.info(f"Received event: {json.dumps(event)}")
               try:
                   table_name = event.get('table_name', 'prp-db-org-policy')
-                  bucket_name = event.get('bucket_name', 'grd-pol-123456789012')  # Default to fixed bucket
+                  bucket_name = event.get('bucket_name', 'grd-pol-123456789012')
+                  logger.info(f"Processing table: {table_name}, bucket: {bucket_name}")
                   check_dynamodb_table_exists(table_name)
                   table = dynamodb.Table(table_name)
+                  logger.info(f"Listing objects in s3://{bucket_name}/policies/")
                   response = s3.list_objects_v2(Bucket=bucket_name, Prefix='policies/')
                   if 'Contents' not in response:
+                      logger.info(f"No policy files found in s3://{bucket_name}/policies/")
                       return {
                           'statusCode': 200,
                           'body': f'No policy files found in s3://{bucket_name}/policies/.'
                       }
                   for obj in response['Contents']:
                       key = obj['Key']
+                      logger.info(f"Processing object: {key}")
                       if not key.endswith('.json'):
+                          logger.info(f"Skipping non-JSON file: {key}")
                           continue
+                      logger.info(f"Reading S3 object: {key}")
                       policy_obj = s3.get_object(Bucket=bucket_name, Key=key)
                       policy_data = json.loads(policy_obj['Body'].read().decode('utf-8'))
+                      logger.info(f"Policy data: {json.dumps(policy_data)}")
                       service_name = extract_service_from_actions(policy_data)
+                      logger.info(f"Querying DynamoDB for service: {service_name}")
                       response = table.query(
                           KeyConditionExpression='services = :s',
                           ExpressionAttributeValues={':s': service_name},
@@ -87,6 +108,7 @@ Resources:
                           new_version = f'v{version_num}'
                       else:
                           new_version = 'v1'
+                      logger.info(f"Writing to DynamoDB: service={service_name}, version={new_version}")
                       table.put_item(
                           Item={
                               'services': service_name,
@@ -97,15 +119,15 @@ Resources:
                               }
                           }
                       )
+                      logger.info(f"Successfully wrote {service_name} version {new_version}")
+                  logger.info("Policy update completed")
                   return {
                       'statusCode': 200,
                       'body': f'Policies updated successfully in DynamoDB table {table_name}.'
                   }
               except Exception as e:
-                  return {
-                      'statusCode': 500,
-                      'body': f'Error updating policies: {str(e)}'
-                  }
+                  logger.error(f"Error updating policies: {str(e)}")
+                  raise
       Environment:
         Variables:
           TABLE_NAME: !Ref TableName
