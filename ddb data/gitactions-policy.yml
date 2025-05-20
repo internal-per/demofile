@@ -1,33 +1,88 @@
+# Workflow to update DynamoDB with policies from S3 after PR merge
 name: Update Policies in DynamoDB
 
+# Define workflow triggers
 on:
+  # Trigger on merged pull requests to dev or main branches
   pull_request:
     types: [closed]
     branches:
       - dev
       - main
+  # Allow manual triggering with configurable inputs
+  workflow_dispatch:
+    inputs:
+      # Environment for deployment (e.g., dev, prod)
+      environment:
+        description: "Environment to deploy"
+        required: true
+        type: string
+        default: dev
+      # Python version for AWS CLI
+      python_version:
+        description: Python version
+        required: true
+        type: string
+        default: "3.11"
+      # AWS region for resources
+      aws_region:
+        description: AWS region for deployment
+        required: true
+        type: string
+        default: ap-southeast-2
+      # S3 bucket name for policy files
+      bucket_name:
+        description: S3 bucket name for policy files
+        required: true
+        type: string
+        default: grd-pol-123456789012
+      # DynamoDB table name for policy storage
+      table_name:
+        description: DynamoDB table name
+        required: true
+        type: string
+        default: prp-db-org-policy
+      # Lambda function name to invoke
+      lambda_function_name:
+        description: Lambda function name
+        required: true
+        type: string
+        default: GuardrailPolicyUpdate
 
+# Define environment variables for the workflow
 env:
-  AWS_REGION: ap-southeast-2
-  BUCKET_NAME: grd-pol-123456789012  # Replace with your AWS account ID
+  # AWS region, defaults to input or ap-southeast-2
+  AWS_REGION: ${{ inputs.aws_region || 'ap-southeast-2' }}
+  # S3 bucket name, defaults to input or grd-pol-123456789012
+  BUCKET_NAME: ${{ inputs.bucket_name || 'grd-pol-123456789012' }}
+  # DynamoDB table name, defaults to input or prp-db-org-policy
+  TABLE_NAME: ${{ inputs.table_name || 'prp-db-org-policy' }}
+  # Lambda function name, defaults to input or GuardrailPolicyUpdate
+  LAMBDA_FUNCTION_NAME: ${{ inputs.lambda_function_name || 'GuardrailPolicyUpdate' }}
 
+# Define permissions for GitHub Actions
 permissions:
-  id-token: write
-  contents: write
-  actions: write  # Required to trigger deploy-lambda.yml
+  id-token: write # Allow writing to OIDC token for AWS authentication
+  contents: write # Allow writing to repository contents
+  actions: write  # Allow triggering other workflows (deploy-lambda.yml)
 
+# Define jobs for the workflow
 jobs:
+  # Job to update policies in DynamoDB
   update-policies:
-    runs-on: default
-    if: github.event.pull_request.merged == true
-    environment: dev
+    runs-on: default # Use default runner
+    # Only run if PR was merged
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    environment: ${{ inputs.environment || 'dev' }} # Set environment from input or default to dev
 
     steps:
+      # Check out the repository code with full history
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Fetch all history for accurate file checks
 
+      # Debug the checkout to verify policy files
       - name: Debug checkout
         run: |
           echo "Current directory: $(pwd)"
@@ -40,32 +95,37 @@ jobs:
             echo "acm.json not found in policies/"
           fi
 
+      # Set up Python environment for AWS CLI
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ inputs.python_version || '3.11' }}
 
+      # Install Python dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -i https://artifactory.internal.cba/api/pypi/org.python.pypi/simple/ --upgrade awscli
         shell: bash
 
+      # Configure AWS credentials using OIDC
       - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
         uses: aws-actions/configure-aws-credentials@v2.2.0
         with:
-          role-to-assume: ${{ secrets.GHA_TRUST_ROLE_ARN }}
+          role-to-assume: ${{ secrets.GHA_TRUST_ROLE_ARN }} # Trusted role for GitHub Actions
           role-session-name: "GitHubActions"
           aws-region: ${{ env.AWS_REGION }}
 
+      # Chain additional AWS role for CI/CD permissions
       - name: Configure AWS credentials (AssumeRole)
         uses: aws-actions/configure-aws-credentials@v2.2.0
         with:
-          role-to-assume: ${{ secrets.GHA_CICD_ROLE_ARN }}
+          role-to-assume: ${{ secrets.GHA_CICD_ROLE_ARN }} # CI/CD role for deployment
           role-session-name: "GitHubActions"
           aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
 
+      # Check if the S3 bucket exists and clean it if present
       - name: Check if S3 Bucket Exists
         id: check-bucket
         run: |
@@ -81,6 +141,7 @@ jobs:
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
+      # Trigger deploy-lambda.yml if bucket is missing
       - name: Trigger Deploy Lambda Workflow if Bucket Missing
         if: steps.check-bucket.outputs.bucket_exists == 'false'
         run: |
@@ -89,10 +150,11 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy-lambda.yml/dispatches \
-            -d '{"ref":"main","inputs":{"environment":"dev","python_version":"3.11"}}'
+            -d '{"ref":"main","inputs":{"environment":"${{ inputs.environment || 'dev' }}","python_version":"${{ inputs.python_version || '3.11' }}","aws_region":"${{ inputs.aws_region || 'ap-southeast-2' }}","bucket_name":"${{ inputs.bucket_name || 'grd-pol-123456789012' }}","stack_name":"guardrail-lambda-stack","table_name":"${{ inputs.table_name || 'prp-db-org-policy' }}","template_file":"guardrail-lambda.yml"}}'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Wait for bucket creation if it was missing
       - name: Wait for Bucket Creation
         if: steps.check-bucket.outputs.bucket_exists == 'false'
         run: |
@@ -110,6 +172,7 @@ jobs:
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
+      # Sync policy files to S3 bucket
       - name: Sync policies to S3
         run: |
           echo "Syncing policies/ to s3://${{ env.BUCKET_NAME }}/policies/"
@@ -119,12 +182,13 @@ jobs:
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
+      # Invoke Lambda to update DynamoDB
       - name: Invoke Lambda to update DynamoDB
         run: |
           echo "Invoking Lambda..."
           aws lambda invoke \
-            --function-name GuardrailPolicyUpdate \
-            --payload '{"table_name": "prp-db-org-policy", "bucket_name": "${{ env.BUCKET_NAME }}"}' \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --payload '{"table_name": "${{ env.TABLE_NAME }}", "bucket_name": "${{ env.BUCKET_NAME }}"}' \
             --region ${{ env.AWS_REGION }} \
             response.json
           if [ -f response.json ]; then

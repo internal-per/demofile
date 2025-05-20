@@ -1,94 +1,148 @@
+# Workflow to deploy the Guardrail Lambda CloudFormation stack
 name: Deploy Guardrail Lambda
 
+# Define workflow triggers
 on:
+  # Trigger on push to main branch
   push:
     branches:
       - main
+  # Allow manual triggering with configurable inputs
   workflow_dispatch:
     inputs:
+      # Environment for deployment (e.g., dev, prod)
       environment:
         description: "Environment to deploy"
         required: true
         type: string
         default: dev
+      # Python version for AWS CLI
       python_version:
         description: Python version
         required: true
         type: string
         default: "3.11"
+      # AWS region for resource deployment
+      aws_region:
+        description: AWS region for deployment
+        required: true
+        type: string
+        default: ap-southeast-2
+      # S3 bucket name for storing policy files
+      bucket_name:
+        description: S3 bucket name for policy files
+        required: true
+        type: string
+        default: grd-pol-123456789012
+      # CloudFormation stack name
+      stack_name:
+        description: CloudFormation stack name
+        required: true
+        type: string
+        default: guardrail-lambda-stack
+      # DynamoDB table name for policy storage
+      table_name:
+        description: DynamoDB table name
+        required: true
+        type: string
+        default: prp-db-org-policy
+      # CloudFormation template file name
+      template_file:
+        description: CloudFormation template file name
+        required: true
+        type: string
+        default: guardrail-lambda.yml
 
+# Define environment variables for the workflow
 env:
-  AWS_REGION: ap-southeast-2
-  BUCKET_NAME: grd-pol-123456789012  # Replace with your AWS account ID
+  # AWS region, defaults to input or ap-southeast-2
+  AWS_REGION: ${{ inputs.aws_region || 'ap-southeast-2' }}
+  # S3 bucket name, defaults to input or grd-pol-123456789012
+  BUCKET_NAME: ${{ inputs.bucket_name || 'grd-pol-123456789012' }}
+  # CloudFormation stack name, defaults to input or guardrail-lambda-stack
+  STACK_NAME: ${{ inputs.stack_name || 'guardrail-lambda-stack' }}
+  # DynamoDB table name, defaults to input or prp-db-org-policy
+  TABLE_NAME: ${{ inputs.table_name || 'prp-db-org-policy' }}
+  # Template file name, defaults to input or guardrail-lambda.yml
+  TEMPLATE_FILE: ${{ inputs.template_file || 'guardrail-lambda.yml' }}
 
+# Define permissions for GitHub Actions
 permissions:
-  id-token: write
-  contents: write
+  id-token: write # Allow writing to OIDC token for AWS authentication
+  contents: write # Allow writing to repository contents
 
+# Define jobs for the workflow
 jobs:
+  # Job to deploy the Lambda stack
   deploy-lambda:
-    runs-on: default
-    environment: ${{ inputs.environment || github.ref_name }}
+    runs-on: default # Use default runner
+    environment: ${{ inputs.environment || github.ref_name }} # Set environment from input or branch
 
     steps:
+      # Check out the repository code
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Set up Python environment for AWS CLI
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ inputs.python_version || '3.11' }}
 
+      # Install Python dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -i https://artifactory.internal.cba/api/pypi/org.python.pypi/simple/ --upgrade awscli
         shell: bash
 
+      # Configure AWS credentials using OIDC
       - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
         uses: aws-actions/configure-aws-credentials@v2.2.0
         with:
-          role-to-assume: ${{ secrets.GHA_TRUST_ROLE_ARN }}
+          role-to-assume: ${{ secrets.GHA_TRUST_ROLE_ARN }} # Trusted role for GitHub Actions
           role-session-name: "GitHubActions"
           aws-region: ${{ env.AWS_REGION }}
 
+      # Chain additional AWS role for CI/CD permissions
       - name: Configure AWS credentials (AssumeRole)
         uses: aws-actions/configure-aws-credentials@v2.2.0
         with:
-          role-to-assume: ${{ secrets.GHA_CICD_ROLE_ARN }}
+          role-to-assume: ${{ secrets.GHA_CICD_ROLE_ARN }} # CI/CD role for deployment
           role-session-name: "GitHubActions"
           aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
 
+      # Validate the CloudFormation template
       - name: Validate CloudFormation Template
         run: |
-          echo "Validating template: guardrail-lambda.yml"
+          echo "Validating template: ${{ env.TEMPLATE_FILE }}"
           aws cloudformation validate-template \
-            --template-body file://cloudformation/guardrail-lambda.yml \
+            --template-body file://cloudformation/${{ env.TEMPLATE_FILE }} \
             --region ${{ env.AWS_REGION }}
         env:
           AWS_REGION: ${{ env.AWS_REGION }}
 
+      # Deploy the CloudFormation stack
       - name: Deploy CloudFormation Stack
         run: |
-          echo "Deploying stack for template: guardrail-lambda.yml"
-          set +e
-          STACK_NAME="guardrail-lambda-stack"
+          echo "Deploying stack for template: ${{ env.TEMPLATE_FILE }}"
+          set +e # Disable exit on error for custom error handling
           aws cloudformation deploy \
-            --template-file cloudformation/guardrail-lambda.yml \
-            --stack-name $STACK_NAME \
+            --template-file cloudformation/${{ env.TEMPLATE_FILE }} \
+            --stack-name ${{ env.STACK_NAME }} \
             --parameter-overrides \
-              TableName=prp-db-org-policy \
+              TableName=${{ env.TABLE_NAME }} \
               BucketName=${{ env.BUCKET_NAME }} \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --region ${{ env.AWS_REGION }} \
             --no-fail-on-empty-changeset
-          EXIT_CODE=$?
+          EXIT_CODE=$? # Capture exit code
           if [ $EXIT_CODE -ne 0 ]; then
             echo "Deployment failed, checking stack status..."
-            if aws cloudformation describe-stacks --stack-name $STACK_NAME --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+            if aws cloudformation describe-stacks --stack-name ${{ env.STACK_NAME }} --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
               STACK_STATUS=$(aws cloudformation describe-stacks \
-                --stack-name $STACK_NAME \
+                --stack-name ${{ env.STACK_NAME }} \
                 --region ${{ env.AWS_REGION }} \
                 --query 'Stacks[0].StackStatus' \
                 --output text)
