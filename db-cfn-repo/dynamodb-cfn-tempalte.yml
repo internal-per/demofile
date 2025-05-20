@@ -2,16 +2,19 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: Deploys the prp-db-org-policy DynamoDB table for TARV2 centralized policy storage.
 
 Parameters:
-  BackupRoleName:
+  TableName:
     Type: String
-    Default: prp-backup-role
-    Description: Name of the IAM role for DynamoDB backups.
+    Default: prp-db-org-policy
+    Description: Name of the DynamoDB table to store policies.
+  OrganizationId:
+    Type: String
+    Description: AWS Organization ID (e.g., o-xxxxxxxxxxxx) for cross-account access.
 
 Resources:
   OrgPolicyTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: prp-db-org-policy
+      TableName: !Ref TableName
       AttributeDefinitions:
         - AttributeName: services
           AttributeType: S
@@ -22,47 +25,6 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
       BillingMode: PROVISIONED
-      PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: true
-
-  BackupRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Ref BackupRoleName
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: dynamodb.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: ddb-Backup-Policy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:CreateBackup
-                  - dynamodb:DescribeTable
-                  - dynamodb:ExportTableToPointInTime
-                  - dynamodb:DescribeContinuousBackups
-                  - dynamodb:UpdateContinuousBackups
-                Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/prp-db-org-policy
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:GetObject
-                  - s3:ListBucket
-                Resource:
-                  - arn:aws:s3:::aws-dynamodb-backup-*
-                  - arn:aws:s3:::aws-dynamodb-backup-*/*
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/dynamodb/*:*
 
   DynamoDBCrossAccountAccessRole:
     Type: AWS::IAM::Role
@@ -73,8 +35,11 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              AWS: arn:aws:iam::*:root(should be within an organisation )
+              AWS: '*'
             Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:PrincipalOrgID: !Ref OrganizationId
       Policies:
         - PolicyName: DynamoDBCrossAccountAccessPolicy
           PolicyDocument:
@@ -91,6 +56,7 @@ Outputs:
     Value: !GetAtt OrgPolicyTable.Arn
   TableName:
     Description: Name of the prp-db-org-policy DynamoDB table
-    Value: !Ref OrgPolicyTable
-
-  
+    Value: !Ref TableName
+  CrossAccountRoleArn:
+    Description: ARN of the cross-account access role
+    Value: !GetAtt DynamoDBCrossAccountAccessRole.Arn

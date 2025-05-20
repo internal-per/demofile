@@ -24,6 +24,7 @@ env:
   AWS_REGION: ap-southeast-2
   STACK_NAME: tarv2-prp-ddb-stack
   TABLE_NAME: prp-db-org-policy
+  ORGANIZATION_ID: o-xxxxxxxxxxxx  # Replace with your AWS Organization ID
 
 permissions:
   id-token: write
@@ -88,6 +89,7 @@ jobs:
           aws cloudformation deploy \
             --template-file cloudformation/${{ matrix.template }} \
             --stack-name ${{ env.STACK_NAME }} \
+            --parameter-overrides OrganizationId=${{ env.ORGANIZATION_ID }} \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
             --region ${{ env.AWS_REGION }} \
             --no-fail-on-empty-changeset
@@ -127,20 +129,7 @@ jobs:
                 "services": {"S": "sample"},
                 "version": {"S": "v1"},
                 "approved_policy_actions": {
-                  "M": {
-                    "Version": {"S": "2012-10-17"},
-                    "Statement": {
-                      "L": [{
-                        "M": {
-                          "Action": {
-                            "L": [{"S": "test:sampledata"}]
-                          },
-                          "Resource": {"S": "*"},
-                          "Effect": {"S": "Allow"}
-                        }
-                      }]
-                    }
-                  }
+                  "S": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"test:sampledata\"],\"Resource\":\"*\",\"Effect\":\"Allow\"}]}"
                 }
               }' \
             --region ${{ env.AWS_REGION }}
