@@ -4,7 +4,7 @@ Description: Deploys the prp-db-org-policy DynamoDB table for TARV2 centralized 
 Parameters:
   BackupRoleName:
     Type: String
-    Default: PrpOrgPolicyBackupRole
+    Default: prp-backup-role
     Description: Name of the IAM role for DynamoDB backups.
 
 Resources:
@@ -37,7 +37,7 @@ Resources:
               Service: dynamodb.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: DynamoDBBackupPolicy
+        - PolicyName: ddb-Backup-Policy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -64,6 +64,27 @@ Resources:
                   - logs:PutLogEvents
                 Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/dynamodb/*:*
 
+  DynamoDBCrossAccountAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DynamoDBCrossAccountAccessRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: arn:aws:iam::*:root(should be within an organisation )
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DynamoDBCrossAccountAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                Resource: !GetAtt OrgPolicyTable.Arn
+
 Outputs:
   TableArn:
     Description: ARN of the prp-db-org-policy DynamoDB table
@@ -71,3 +92,5 @@ Outputs:
   TableName:
     Description: Name of the prp-db-org-policy DynamoDB table
     Value: !Ref OrgPolicyTable
+
+  
