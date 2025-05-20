@@ -1,14 +1,1 @@
-2025-05-19T02:17:54.277Z
-INIT_START Runtime Version: python:3.11.v73	Runtime Version ARN: arn:aws:lambda:ap-southeast-2::runtime:79377efe727c2c2a431590cea2205bea4713f7099d2a2a0faf6e4f0b57bfca3b
-INIT_START Runtime Version: python:3.11.v73 Runtime Version ARN: arn:aws:lambda:ap-southeast-2::runtime:79377efe727c2c2a431590cea2205bea4713f7099d2a2a0faf6e4f0b57bfca3b
-	
-2025-05-19T02:17:54.742Z
-START RequestId: eedb49f0-f18e-4ca7-86f8-7df5e12cefd0 Version: $LATEST
-START RequestId: eedb49f0-f18e-4ca7-86f8-7df5e12cefd0 Version: $LATEST
-	
-2025-05-19T02:17:55.670Z
-END RequestId: eedb49f0-f18e-4ca7-86f8-7df5e12cefd0
-END RequestId: eedb49f0-f18e-4ca7-86f8-7df5e12cefd0
-	
-2025-05-19T02:17:55.670Z
-REPORT RequestId: eedb49f0-f18e-4ca7-86f8-7df5e12cefd0	Duration: 927.72 ms	Billed Duration: 928 ms	Memory Size: 128 MB	Max Memory Used: 91 MB	Init Duration: 464.86 ms	
+https://aws.amazon.com/blogs/database/simplify-cross-account-access-control-with-amazon-dynamodb-using-resource-based-policies/#:~:text=With%20resource%2Dbased%20policies%2C%20you%20only%20need%20a%20single%20role,based%20policies%20and%203%20roles.&text=When%20you%20need%20to%20access,of%20managing%20resource%20access%20control.
