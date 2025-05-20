@@ -41,14 +41,14 @@ Resources:
                 - dynamodb:GetItem # Allow read access to table items
                 - dynamodb:UpdateItem # Allow updates to table items
                 - dynamodb:DescribeTable # Allow table metadata access
-              Resource: !GetAtt OrgPolicyTable.Arn # Table ARN
+              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName} # Table ARN constructed manually
             # Policy for cross-account principals (e.g., pdp-lambda) in the organization
             - Effect: Allow
               Principal:
                 AWS: '*' # Allow all AWS principals in the organization
               Action:
                 - dynamodb:GetItem # Allow read access to table items
-              Resource: !GetAtt OrgPolicyTable.Arn # Table ARN
+              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName} # Table ARN constructed manually
               Condition:
                 StringEquals:
                   aws:PrincipalOrgID: !Ref OrganizationId # Restrict to organization accounts
