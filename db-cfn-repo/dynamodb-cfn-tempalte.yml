@@ -1,6 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Deploys the prp-db-org-policy DynamoDB table for TARV2 centralized policy storage.
 
+# Parameters define configurable inputs for the template
 Parameters:
   TableName:
     Type: String
@@ -8,48 +9,43 @@ Parameters:
     Description: Name of the DynamoDB table to store policies.
   OrganizationId:
     Type: String
-    Description: AWS Organization ID (e.g., o-xxxxxxxxxxxx) for cross-account access.
+    Description: AWS Organization ID (e.g., o-xxxxxxxxxxxx) for reference (not used in policy).
+  LambdaAccountIds:
+    Type: CommaDelimitedList
+    Description: List of AWS account IDs hosting the GuardrailPolicyUpdate Lambda for cross-account access (e.g., 123456789012,234567890123).
 
+# Resources define the AWS components to be created
 Resources:
+  # DynamoDB table to store organization policies
   OrgPolicyTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Ref TableName
+      TableName: !Ref TableName # Name of the table, defaults to prp-db-org-policy
       AttributeDefinitions:
         - AttributeName: services
-          AttributeType: S
+          AttributeType: S # String type for the services partition key
       KeySchema:
         - AttributeName: services
-          KeyType: HASH
+          KeyType: HASH # Partition key for services (e.g., s3, acm)
       ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
-      BillingMode: PROVISIONED
+        ReadCapacityUnits: 5 # Read capacity for provisioned throughput
+        WriteCapacityUnits: 5 # Write capacity for provisioned throughput
+      BillingMode: PROVISIONED # Use provisioned billing mode
+      # Resource-based policy for cross-account Lambda access
+      ResourcePolicy:
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                AWS: !Sub
+                  - - arn:aws:lambda:${AWS::Region}:${AccountId}:function:GuardrailPolicyUpdate
+                  - AccountId: !Ref LambdaAccountIds
+              Action:
+                - dynamodb:GetItem # Allow read access to table items
+              Resource: !GetAtt OrgPolicyTable.Arn # Table ARN
 
-  DynamoDBCrossAccountAccessRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: DynamoDBCrossAccountAccessRole
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              AWS: '*'
-            Action: sts:AssumeRole
-            Condition:
-              StringEquals:
-                aws:PrincipalOrgID: !Ref OrganizationId
-      Policies:
-        - PolicyName: DynamoDBCrossAccountAccessPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:GetItem
-                Resource: !GetAtt OrgPolicyTable.Arn
-
+# Outputs provide information about created resources
 Outputs:
   TableArn:
     Description: ARN of the prp-db-org-policy DynamoDB table
@@ -57,6 +53,3 @@ Outputs:
   TableName:
     Description: Name of the prp-db-org-policy DynamoDB table
     Value: !Ref TableName
-  CrossAccountRoleArn:
-    Description: ARN of the cross-account access role
-    Value: !GetAtt DynamoDBCrossAccountAccessRole.Arn
