@@ -9,10 +9,7 @@ Parameters:
     Description: Name of the DynamoDB table to store policies.
   OrganizationId:
     Type: String
-    Description: AWS Organization ID (e.g., o-xxxxxxxxxxxx) for reference (not used in policy).
-  LambdaAccountIds:
-    Type: CommaDelimitedList
-    Description: List of AWS account IDs hosting the GuardrailPolicyUpdate Lambda for cross-account access (e.g., 123456789012,234567890123).
+    Description: AWS Organization ID (e.g., o-xxxxxxxxxxxx) to restrict cross-account read access to organization principals.
 
 # Resources define the AWS components to be created
 Resources:
@@ -31,19 +28,30 @@ Resources:
         ReadCapacityUnits: 5 # Read capacity for provisioned throughput
         WriteCapacityUnits: 5 # Write capacity for provisioned throughput
       BillingMode: PROVISIONED # Use provisioned billing mode
-      # Resource-based policy for cross-account Lambda access
+      # Resource-based policy for Lambda access
       ResourcePolicy:
         PolicyDocument:
           Version: '2012-10-17'
           Statement:
+            # Policy for GuardrailPolicyUpdate Lambda in the deploying account
             - Effect: Allow
               Principal:
-                AWS: !Sub
-                  - - arn:aws:lambda:${AWS::Region}:${AccountId}:function:GuardrailPolicyUpdate
-                  - AccountId: !Ref LambdaAccountIds
+                AWS: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:GuardrailPolicyUpdate # Lambda ARN in this account
+              Action:
+                - dynamodb:GetItem # Allow read access to table items
+                - dynamodb:UpdateItem # Allow updates to table items
+                - dynamodb:DescribeTable # Allow table metadata access
+              Resource: !GetAtt OrgPolicyTable.Arn # Table ARN
+            # Policy for cross-account principals (e.g., pdp-lambda) in the organization
+            - Effect: Allow
+              Principal:
+                AWS: '*' # Allow all AWS principals in the organization
               Action:
                 - dynamodb:GetItem # Allow read access to table items
               Resource: !GetAtt OrgPolicyTable.Arn # Table ARN
+              Condition:
+                StringEquals:
+                  aws:PrincipalOrgID: !Ref OrganizationId # Restrict to organization accounts
 
 # Outputs provide information about created resources
 Outputs:
