@@ -114,19 +114,31 @@ Resources:
                       service_name = extract_service_from_actions(policy_data)
                       logger.info(f"Updating DynamoDB for service: {service_name}")
                       try:
-                          # Get current item to determine version
+                          # Get current item to determine version and existing policy
                           response = table.get_item(Key={'services': service_name})
-                          current_version = response.get('Item', {}).get('version', 'v0')
-                          version_num = int(current_version.replace('v', '')) + 1 if current_version.startswith('v') else 1
-                          new_version = f'v{version_num}'  # Increment version
+                          item = response.get('Item', {})
+                          current_version = item.get('version', 'v0')
+                          current_policy = item.get('approved_policy_actions', '')
                           
-                          # Serialize policy data to JSON string
+                          # Serialize new policy to JSON string
                           policy_json = json.dumps({
                               'Version': policy_data['Version'],
                               'Statement': policy_data['Statement']
-                          })
+                          }, sort_keys=True)
                           
-                          # Update DynamoDB item
+                          # Normalize current policy for comparison
+                          normalized_current = json.dumps(json.loads(current_policy), sort_keys=True) if current_policy else ''
+                          
+                          # Compare new policy with current policy for this service
+                          if policy_json == normalized_current:
+                              logger.info(f"No changes in policy for {service_name}, skipping update")
+                              continue
+                          
+                          # Increment version for update only for this service
+                          version_num = int(current_version.replace('v', '')) + 1 if current_version.startswith('v') else 1
+                          new_version = f'v{version_num}'
+                          
+                          # Update DynamoDB item with new version and policy for this service
                           table.update_item(
                               Key={'services': service_name},
                               UpdateExpression='SET version = :v, approved_policy_actions = :p',
