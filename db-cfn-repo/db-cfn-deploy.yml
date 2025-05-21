@@ -24,7 +24,7 @@ env:
   AWS_REGION: ap-southeast-2
   STACK_NAME: tarv2-prp-ddb-stack
   TABLE_NAME: prp-db-org-policy
-  ORGANIZATION_ID: o-xxxxxxxxxxxx  # Replace with your AWS Organization ID
+  ORGANIZATION_ID: o-fvwvfa9my5
 
 permissions:
   id-token: write
@@ -59,17 +59,17 @@ jobs:
         shell: bash
 
       - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
-        uses: aws-actions/configure-aws-credentials@v2.2.0
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.GHA_TRUST_ROLE_ARN }}
-          role-session-name: "GitHubActions"
-          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.GHA_TRUST_ROLE }}
+          role-session-name: githubsession
+          aws-region: ${{ env.AWS_REGION }} 
 
       - name: Configure AWS credentials (AssumeRole)
-        uses: aws-actions/configure-aws-credentials@v2.2.0
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.GHA_CICD_ROLE_ARN }}
-          role-session-name: "GitHubActions"
+          role-to-assume: ${{ env.GHA_CICD_ROLE }}
+          role-session-name: githubsession
           aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
 
