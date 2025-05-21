@@ -47,6 +47,14 @@ jobs:
         with:
           environment: dev
           python-version: ${{ inputs.python_version || '3.11' }}
+          gha_trust_role: ${{ vars.GHA_TRUST_ROLE }}
+          aws_region: ${{ vars.AWS_REGION }}
+          gha_cicd_role: ${{ vars.GHA_CICD_ROLE }}
+          cfn_template_path: ${{ vars.CFN_TEMPLATE_PATH }}
+          stack_name: ${{ vars.STACK_NAME }}
+          table_name: ${{ vars.TABLE_NAME }}
+          organization_id: ${{ vars.ORGANIZATION_ID }}
+          lambda_role_name: ${{ vars.LAMBDA_ROLE_NAME }}
 
   deploy-nonprod:
     runs-on: default
@@ -63,6 +71,14 @@ jobs:
         with:
           environment: nonprod
           python-version: ${{ inputs.python_version || '3.11' }}
+          gha_trust_role: ${{ vars.GHA_TRUST_ROLE }}
+          aws_region: ${{ vars.AWS_REGION }}
+          gha_cicd_role: ${{ vars.GHA_CICD_ROLE }}
+          cfn_template_path: ${{ vars.CFN_TEMPLATE_PATH }}
+          stack_name: ${{ vars.STACK_NAME }}
+          table_name: ${{ vars.TABLE_NAME }}
+          organization_id: ${{ vars.ORGANIZATION_ID }}
+          lambda_role_name: ${{ vars.LAMBDA_ROLE_NAME }}
 
   deploy-staging:
     runs-on: default
@@ -79,6 +95,14 @@ jobs:
         with:
           environment: staging
           python-version: ${{ inputs.python_version || '3.11' }}
+          gha_trust_role: ${{ vars.GHA_TRUST_ROLE }}
+          aws_region: ${{ vars.AWS_REGION }}
+          gha_cicd_role: ${{ vars.GHA_CICD_ROLE }}
+          cfn_template_path: ${{ vars.CFN_TEMPLATE_PATH }}
+          stack_name: ${{ vars.STACK_NAME }}
+          table_name: ${{ vars.TABLE_NAME }}
+          organization_id: ${{ vars.ORGANIZATION_ID }}
+          lambda_role_name: ${{ vars.LAMBDA_ROLE_NAME }}
 
   deploy-prod:
     runs-on: default
@@ -95,3 +119,11 @@ jobs:
         with:
           environment: prod
           python-version: ${{ inputs.python_version || '3.11' }}
+          gha_trust_role: ${{ vars.GHA_TRUST_ROLE }}
+          aws_region: ${{ vars.AWS_REGION }}
+          gha_cicd_role: ${{ vars.GHA_CICD_ROLE }}
+          cfn_template_path: ${{ vars.CFN_TEMPLATE_PATH }}
+          stack_name: ${{ vars.STACK_NAME }}
+          table_name: ${{ vars.TABLE_NAME }}
+          organization_id: ${{ vars.ORGANIZATION_ID }}
+          lambda_role_name: ${{ vars.LAMBDA_ROLE_NAME }}
