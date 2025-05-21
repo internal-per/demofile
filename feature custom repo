@@ -4,20 +4,6 @@ Description: >
   with specific permissions for DynamoDB, S3, Lambda, CloudFormation, CloudWatch Logs, IAM, and STS,
   including IAM and CloudFormation delete permissions and S3 bucket creation/deletion.
 
-Parameters:
-  TableName:
-    Type: String
-    Default: prp-db-org-policy
-    Description: Name of the DynamoDB table to access.
-  BucketName:
-    Type: String
-    Default: grd-pol-123456789012
-    Description: Name of the S3 bucket for policy files.
-  LambdaFunctionName:
-    Type: String
-    Default: GuardrailPolicyUpdate
-    Description: Name of the Lambda function for scoping IAM PassRole.
-
 Resources:
   GithubTrustRole:
     Type: "AWS::IAM::Role"
@@ -74,19 +60,19 @@ Resources:
             Principal:
               AWS: !GetAtt GithubTrustRole.Arn
       ManagedPolicyArns:
-        - !Ref prp-dynamodbaccesspolicy
-        - !Ref prp-s3accesspolicy
-        - !Ref prp-lambdaaccesspolicy
-        - !Ref prp-cloudformationaccesspolicy
-        - !Ref prp-cloudwatchlogsaccesspolicy
-        - !Ref prp-iamaccesspolicy
-        - !Ref prp-stsaccesspolicy
+        - !Ref prpdynamodbaccesspolicy
+        - !Ref prps3accesspolicy
+        - !Ref prplambdaaccesspolicy
+        - !Ref prpcloudformationaccesspolicy
+        - !Ref prpcloudwatchlogsaccesspolicy
+        - !Ref prpiamaccesspolicy
+        - !Ref prpstsaccesspolicy
 
-  prp-dynamodbaccesspolicy:
+  prpdynamodbaccesspolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      PolicyName: prp-dynamodbaccesspolicy
-      Description: Grants access to perform operations on the prp-db-org-policy DynamoDB table.
+      PolicyName: prpdynamodbaccesspolicy
+      Description: Grants access to perform operations on all DynamoDB tables.
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -96,13 +82,13 @@ Resources:
               - dynamodb:UpdateItem
               - dynamodb:DescribeTable
               - dynamodb:PutItem
-            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/*
 
-  prp-s3accesspolicy:
+  prps3accesspolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      PolicyName: prp-s3accesspolicy
-      Description: Grants access to manage policy files in the S3 bucket and create/delete buckets.
+      PolicyName: prps3accesspolicy
+      Description: Grants access to manage objects in all S3 buckets and create/delete buckets.
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -112,18 +98,18 @@ Resources:
               - s3:ListBucket
               - s3:PutObject
             Resource:
-              - !Sub arn:aws:s3:::${BucketName}
-              - !Sub arn:aws:s3:::${BucketName}/*
+              - arn:aws:s3:::*
+              - arn:aws:s3:::*/*
           - Effect: Allow
             Action:
               - s3:CreateBucket
               - s3:DeleteBucket
             Resource: "*"
 
-  prp-lambdaaccesspolicy:
+  prplambdaaccesspolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      PolicyName: prp-lambdaaccesspolicy
+      PolicyName: prplambdaaccesspolicy
       Description: Grants access to invoke all Lambda functions in the account.
       PolicyDocument:
         Version: "2012-10-17"
@@ -133,10 +119,10 @@ Resources:
               - lambda:InvokeFunction
             Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*
 
-  prp-cloudformationaccesspolicy:
+  prpcloudformationaccesspolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      PolicyName: prp-cloudformationaccesspolicy
+      PolicyName: prpcloudformationaccesspolicy
       Description: Grants access to validate, deploy, and delete all CloudFormation stacks.
       PolicyDocument:
         Version: "2012-10-17"
@@ -149,10 +135,10 @@ Resources:
               - cloudformation:DeleteStack
             Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/*
 
-  prp-cloudwatchlogsaccesspolicy:
+  prpcloudwatchlogsaccesspolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      PolicyName: prp-cloudwatchlogsaccesspolicy
+      PolicyName: prpcloudwatchlogsaccesspolicy
       Description: Grants access to create and write to CloudWatch Logs for all Lambda functions.
       PolicyDocument:
         Version: "2012-10-17"
@@ -164,10 +150,10 @@ Resources:
               - logs:PutLogEvents
             Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
 
-  prp-iamaccesspolicy:
+  prpiamaccesspolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      PolicyName: prp-iamaccesspolicy
+      PolicyName: prpiamaccesspolicy
       Description: Grants access to pass and delete roles and policies.
       PolicyDocument:
         Version: "2012-10-17"
@@ -175,17 +161,17 @@ Resources:
           - Effect: Allow
             Action:
               - iam:PassRole
-            Resource: !Sub arn:aws:iam::${AWS::AccountId}:role/GuardrailPolicyUpdateRole
+            Resource: !Sub arn:aws:iam::${AWS::AccountId}:role/*
           - Effect: Allow
             Action:
               - iam:DeleteRole
               - iam:DeletePolicy
             Resource: "*"
 
-  prp-stsaccesspolicy:
+  prpstsaccesspolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      PolicyName: prp-stsaccesspolicy
+      PolicyName: prpstsaccesspolicy
       Description: Grants access to assume roles and tag sessions for GitHub Actions.
       PolicyDocument:
         Version: "2012-10-17"
