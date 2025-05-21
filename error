@@ -8,12 +8,10 @@ GHA_CICD_ROLE: IAM role for CI/CD operations.
 LAMBDA_ROLE_NAME: e.g., GuardrailPolicyUpdateRole
 
 
-An error occurred (ValidationException) when calling the PutItem operation: One or more parameter values were invalid: Type mismatch for key version expected: N actual: S
-
-
-
-Can't find 'action.yml', 'action.yaml' or 'Dockerfile' under '/home/runner/_work/aws-tarv2/.github/actions/deploy'. Did you forget to run actions/checkout before running your local action?
-
-
-
-${{ github.repository }}/.github/workflows/deploy-reusable.yml@main is not allowed to be used in aws-ddb-tetris-tarv2. Actions in this workflow must be: within a repository that belongs to your Enterprise account, created by GitHub, verified in the GitHub Marketplace, or matching the following: astral-sh/setup-uv@*, burrunan/gradle-cache-action@*, davelosert/vitest-coverage-report-action@*, dekinderfiets/pr-description-enforcer@*, docker://*.docker.internal.cba/*, dorny/paths-filter@*, dorny/test-reporter@*, grafana/k6-action@*, peaceiris/actions-gh-pages@*, pnpm/action-setup@*, technote-space/broken-link-checker-action@*.
+ Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 28, Col: 25): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.GHA_TRUST_ROLE
+Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 30, Col: 21): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.AWS_REGION
+Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 34, Col: 25): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.GHA_CICD_ROLE
+Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 36, Col: 21): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.AWS_REGION
+Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 42, Col: 12): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.CFN_TEMPLATE_PATH
+Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 49, Col: 12): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.CFN_TEMPLATE_PATH
+Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 90, Col: 12): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.TABLE_NAME
