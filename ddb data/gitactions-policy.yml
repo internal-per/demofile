@@ -35,7 +35,7 @@ on:
         description: S3 bucket name for policy files
         required: true
         type: string
-        default: grd-pol-123456789012
+        default: guardrail-policy-deploy-temp
       # DynamoDB table name for policy storage
       table_name:
         description: DynamoDB table name
@@ -53,8 +53,8 @@ on:
 env:
   # AWS region, defaults to input or ap-southeast-2
   AWS_REGION: ${{ inputs.aws_region || 'ap-southeast-2' }}
-  # S3 bucket name, defaults to input or grd-pol-123456789012
-  BUCKET_NAME: ${{ inputs.bucket_name || 'grd-pol-123456789012' }}
+  # S3 bucket name, defaults to input
+  BUCKET_NAME: ${{ inputs.bucket_name || 'guardrail-policy-deploy-temp' }}
   # DynamoDB table name, defaults to input or prp-db-org-policy
   TABLE_NAME: ${{ inputs.table_name || 'prp-db-org-policy' }}
   # Lambda function name, defaults to input or GuardrailPolicyUpdate
