@@ -49,15 +49,19 @@ Resources:
         PolicyDocument:
           Version: '2012-10-17'
           Statement:
-            - Effect: Allow
+            - Sid: AllowLambdaAccess
+              Effect: Allow
               Principal:
-                AWS: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:GuardrailPolicyUpdate
+                AWS: !Sub
+                  - arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:GuardrailPolicyUpdate
+                  - { }
               Action:
                 - dynamodb:GetItem
                 - dynamodb:UpdateItem
                 - dynamodb:DescribeTable
               Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}
-            - Effect: Allow
+            - Sid: AllowOrg1Access
+              Effect: Allow
               Principal:
                 AWS: '*'
               Action:
@@ -65,9 +69,17 @@ Resources:
               Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}
               Condition:
                 StringEquals:
-                  aws:PrincipalOrgID:
-                    - o-456345
-                    - o-erf5343
+                  aws:PrincipalOrgID: o-456345
+            - Sid: AllowOrg2Access
+              Effect: Allow
+              Principal:
+                AWS: '*'
+              Action:
+                - dynamodb:GetItem
+              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}
+              Condition:
+                StringEquals:
+                  aws:PrincipalOrgID: o-erf5343
       Tags:
         - Key: Environment
           Value: !Ref Environment
