@@ -8,6 +8,30 @@ inputs:
     description: Python version for the runner
     required: true
     default: '3.11'
+  gha_trust_role:
+    description: IAM role for OIDC authentication
+    required: true
+  aws_region:
+    description: AWS region for deployment
+    required: true
+  gha_cicd_role:
+    description: IAM role for CI/CD operations
+    required: true
+  cfn_template_path:
+    description: Path to the CloudFormation template
+    required: true
+  stack_name:
+    description: CloudFormation stack name
+    required: true
+  table_name:
+    description: DynamoDB table name (without environment suffix)
+    required: true
+  organization_id:
+    description: AWS Organization ID
+    required: true
+  lambda_role_name:
+    description: Name of the Lambda execution role
+    required: true
 runs:
   using: composite
   steps:
@@ -25,48 +49,48 @@ runs:
     - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: ${{ vars.GHA_TRUST_ROLE }}
+        role-to-assume: ${{ inputs.gha_trust_role }}
         role-session-name: githubsession
-        aws-region: ${{ vars.AWS_REGION }}
+        aws-region: ${{ inputs.aws_region }}
     - name: Configure AWS credentials (AssumeRole)
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: ${{ vars.GHA_CICD_ROLE }}
+        role-to-assume: ${{ inputs.gha_cicd_role }}
         role-session-name: githubsession
-        aws-region: ${{ vars.AWS_REGION }}
+        aws-region: ${{ inputs.aws_region }}
         role-chaining: true
     - name: Verify AWS Caller Identity
       run: aws sts get-caller-identity
       shell: bash
     - name: Validate CloudFormation Template
       run: |
-        echo "Validating template: ${{ vars.CFN_TEMPLATE_PATH }}"
+        echo "Validating template: ${{ inputs.cfn_template_path }}"
         aws cloudformation validate-template \
-          --template-body file://${{ vars.CFN_TEMPLATE_PATH }} \
-          --region ${{ vars.AWS_REGION }}
+          --template-body file://${{ inputs.cfn_template_path }} \
+          --region ${{ inputs.aws_region }}
       shell: bash
     - name: Deploy CloudFormation Stack
       run: |
         echo "Deploying stack for environment: ${{ inputs.environment }}"
         set +e
         aws cloudformation deploy \
-          --template-file ${{ vars.CFN_TEMPLATE_PATH }} \
-          --stack-name ${{ vars.STACK_NAME }} \
+          --template-file ${{ inputs.cfn_template_path }} \
+          --stack-name ${{ inputs.stack_name }} \
           --parameter-overrides \
             Environment=${{ inputs.environment }} \
-            TableName=${{ vars.TABLE_NAME }} \
-            OrganizationId=${{ vars.ORGANIZATION_ID }} \
-            LambdaRoleName=${{ vars.LAMBDA_ROLE_NAME }} \
+            TableName=${{ inputs.table_name }} \
+            OrganizationId=${{ inputs.organization_id }} \
+            LambdaRoleName=${{ inputs.lambda_role_name }} \
           --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-          --region ${{ vars.AWS_REGION }} \
+          --region ${{ inputs.aws_region }} \
           --no-fail-on-empty-changeset
         EXIT_CODE=$?
         if [ $EXIT_CODE -ne 0 ]; then
           echo "Deployment failed, checking stack status..."
-          if aws cloudformation describe-stacks --stack-name ${{ vars.STACK_NAME }} --region ${{ vars.AWS_REGION }} > /dev/null 2>&1; then
+          if aws cloudformation describe-stacks --stack-name ${{ inputs.stack_name }} --region ${{ inputs.aws_region }} > /dev/null 2>&1; then
             STACK_STATUS=$(aws cloudformation describe-stacks \
-              --stack-name ${{ vars.STACK_NAME }} \
-              --region ${{ vars.AWS_REGION }} \
+              --stack-name ${{ inputs.stack_name }} \
+              --region ${{ inputs.aws_region }} \
               --query 'Stacks[0].StackStatus' \
               --output text)
             echo "Stack status: $STACK_STATUS"
@@ -88,9 +112,9 @@ runs:
     - name: Populate DynamoDB with Initial Data
       if: inputs.environment == 'dev' || inputs.environment == 'nonprod'
       run: |
-        echo "Inserting initial data into table: ${{ vars.TABLE_NAME }}-${{ inputs.environment }}"
+        echo "Inserting initial data into table: ${{ inputs.table_name }}-${{ inputs.environment }}"
         aws dynamodb put-item \
-          --table-name ${{ vars.TABLE_NAME }}-${{ inputs.environment }} \
+          --table-name ${{ inputs.table_name }}-${{ inputs.environment }} \
           --item '{
               "services": {"S": "sample"},
               "version": {"N": "1"},
@@ -98,5 +122,5 @@ runs:
                 "S": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"test:sampledata\"],\"Resource\":\"*\",\"Effect\":\"Allow\"}]}"
               }
             }' \
-          --region ${{ vars.AWS_REGION }}
+          --region ${{ inputs.aws_region }}
       shell: bash
