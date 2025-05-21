@@ -51,7 +51,7 @@ jobs:
       (github.event_name == 'push' && matrix.environment == 'dev' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'TAR-'))) ||
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == matrix.environment && github.event.pull_request.head.ref == matrix.previous) ||
       (github.event_name == 'workflow_dispatch' && inputs.environment == matrix.environment)
-    needs: ${{ matrix.previous != null ? 'deploy-' + matrix.previous : null }}
+    needs: ${{ matrix.previous != null ? format('deploy-{0}', matrix.previous) : null }}
     environment: ${{ matrix.environment }}
     steps:
       - name: Checkout repository
