@@ -13,5 +13,6 @@ An error occurred (ValidationException) when calling the PutItem operation: One 
 
 
 
-The workflow is not valid. .github/workflows/deploy.yml (Line: 42, Col: 5): Unexpected value 'uses' .github/workflows/deploy.yml (Line: 43, Col: 5): Unexpected value 'with'
+
+Can't find 'action.yml', 'action.yaml' or 'Dockerfile' under '/home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/.github/workflows/deploy-reusable.yml'. Did you forget to run actions/checkout before running your local action?
 
