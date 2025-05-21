@@ -1,8 +1,22 @@
----
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
   CloudFormation template to create an IAM Role for GitHub OIDC integration
-  with specific permissions and restrictions.
+  with specific permissions for DynamoDB, S3, Lambda, CloudFormation, CloudWatch Logs, IAM, and STS,
+  including IAM and CloudFormation delete permissions and S3 bucket creation/deletion.
+
+Parameters:
+  TableName:
+    Type: String
+    Default: prp-db-org-policy
+    Description: Name of the DynamoDB table to access.
+  BucketName:
+    Type: String
+    Default: grd-pol-123456789012
+    Description: Name of the S3 bucket for policy files.
+  LambdaFunctionName:
+    Type: String
+    Default: GuardrailPolicyUpdate
+    Description: Name of the Lambda function for scoping IAM PassRole.
 
 Resources:
   GithubTrustRole:
@@ -21,8 +35,8 @@ Resources:
                 "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
               StringLike:
                 "token.actions.githubusercontent.com:sub":
-                  - "repo:CBA-General/aws-ddb-tetris-tarv2:*"
-                  - "repo:CBA-General/aws-guardrail-policy-security:*"
+                  - "repo:General/aws-ddb-tetris-tarv2:*"
+                  - "repo:General/aws-guardrail-policy-security:*"
       Policies:
         - PolicyName: "AllowAssumeRole"
           PolicyDocument:
@@ -43,14 +57,13 @@ Resources:
                 Condition:
                   StringNotEquals:
                     aws:SourceVpc:
-                      - "vpc-0ebb4ee6c9c0859a3"
+                      - "vpc-012344"
+
   GithubCICD:
     Type: "AWS::IAM::Role"
     DependsOn: GithubTrustRole
     Properties:
       RoleName: "GHA-CICD"
-      ManagedPolicyArns:
-        - "arn:aws:iam::aws:policy/AdministratorAccess"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -60,6 +73,128 @@ Resources:
               - "sts:TagSession"
             Principal:
               AWS: !GetAtt GithubTrustRole.Arn
+      ManagedPolicyArns:
+        - !Ref prp-dynamodbaccesspolicy
+        - !Ref prp-s3accesspolicy
+        - !Ref prp-lambdaaccesspolicy
+        - !Ref prp-cloudformationaccesspolicy
+        - !Ref prp-cloudwatchlogsaccesspolicy
+        - !Ref prp-iamaccesspolicy
+        - !Ref prp-stsaccesspolicy
+
+  prp-dynamodbaccesspolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyName: prp-dynamodbaccesspolicy
+      Description: Grants access to perform operations on the prp-db-org-policy DynamoDB table.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:UpdateItem
+              - dynamodb:DescribeTable
+              - dynamodb:PutItem
+            Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
+
+  prp-s3accesspolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyName: prp-s3accesspolicy
+      Description: Grants access to manage policy files in the S3 bucket and create/delete buckets.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:ListBucket
+              - s3:PutObject
+            Resource:
+              - !Sub arn:aws:s3:::${BucketName}
+              - !Sub arn:aws:s3:::${BucketName}/*
+          - Effect: Allow
+            Action:
+              - s3:CreateBucket
+              - s3:DeleteBucket
+            Resource: "*"
+
+  prp-lambdaaccesspolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyName: prp-lambdaaccesspolicy
+      Description: Grants access to invoke all Lambda functions in the account.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:*
+
+  prp-cloudformationaccesspolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyName: prp-cloudformationaccesspolicy
+      Description: Grants access to validate, deploy, and delete all CloudFormation stacks.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - cloudformation:ValidateTemplate
+              - cloudformation:Deploy
+              - cloudformation:DescribeStacks
+              - cloudformation:DeleteStack
+            Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/*
+
+  prp-cloudwatchlogsaccesspolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyName: prp-cloudwatchlogsaccesspolicy
+      Description: Grants access to create and write to CloudWatch Logs for all Lambda functions.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+
+  prp-iamaccesspolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyName: prp-iamaccesspolicy
+      Description: Grants access to pass and delete roles and policies.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub arn:aws:iam::${AWS::AccountId}:role/GuardrailPolicyUpdateRole
+          - Effect: Allow
+            Action:
+              - iam:DeleteRole
+              - iam:DeletePolicy
+            Resource: "*"
+
+  prp-stsaccesspolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyName: prp-stsaccesspolicy
+      Description: Grants access to assume roles and tag sessions for GitHub Actions.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - sts:AssumeRole
+              - sts:TagSession
+            Resource: !Sub arn:aws:iam::${AWS::AccountId}:role/GHA-CICD
 
 Outputs:
   GithubTrustRoleArn:
@@ -68,4 +203,3 @@ Outputs:
   GithubCICDArn:
     Description: "The ARN of the Github CICD Role"
     Value: !GetAtt GithubCICD.Arn
-    
