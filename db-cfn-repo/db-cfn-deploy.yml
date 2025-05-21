@@ -1,4 +1,4 @@
-# GitHub Actions workflow to deploy the TARV2 PRP DynamoDB table
+# GitHub Actions workflow to deploy the TARV2 DynamoDB table
 name: Deploy Centralised PRP DDB for TARV2
 
 on:
@@ -30,8 +30,8 @@ on:
         default: "3.11"
 
 permissions:
-  id-token: write   
-  contents: write   
+  id-token: write   # Required for OIDC-based AWS authentication
+  contents: write   # Required for checking out the repository
 
 jobs:
   build-test-deploy:
@@ -46,35 +46,24 @@ jobs:
       ACTIONS_RUNNER_DEBUG: true
       ACTIONS_STEP_DEBUG: true
 
-    # Branch to environment mapping to avoid code repetition
+    # Define matrix for environment-specific deployments
     strategy:
       matrix:
-        branch:
+        environment:
           - dev
           - nonprod
           - staging
           - prod
-          - 'TAR-*'
         include:
-          - branch: dev
-            environment: dev
+          - environment: dev
             account: dev
-          - branch: 'TAR-*'
-            environment: dev
-            account: dev
-          - branch: nonprod
-            environment: nonprod
+          - environment: nonprod
             account: nonprod
-          - branch: staging
-            environment: staging
+          - environment: staging
             account: staging
-          - branch: prod
-            environment: prod
+          - environment: prod
             account: prod
       fail-fast: false
-
-    # Only run for the matching branch or TAR-* branches
-    if: github.ref_name == matrix.branch || startsWith(github.ref_name, 'TAR-')
 
     steps:
       # Check out the repository code
@@ -94,10 +83,10 @@ jobs:
           pip install awscli
         shell: bash
 
-      # Validate that the branch is deploying to the correct environment
+      # Validate that the branch matches the intended environment
       - name: Validate Branch to Environment Mapping
         run: |
-          if [[ "${{ github.ref_name }}" == "dev" || "${{ github.ref_name }}" == "TAR-"* ]] && [[ "${{ matrix.environment }}" != "dev" ]]; then
+          if [[ "${{ github.ref_name }}" == "dev" || "${{ github.ref_name }}" =~ ^TAR- ]] && [[ "${{ matrix.environment }}" != "dev" ]]; then
             echo "Error: dev and TAR-* branches can only deploy to dev environment"
             exit 1
           fi
