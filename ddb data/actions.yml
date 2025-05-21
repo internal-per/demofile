@@ -1,0 +1,87 @@
+name: Update Policies
+description: Syncs policy files to S3 and updates DynamoDB via Lambda
+inputs:
+  aws-region:
+    description: AWS region for deployment
+    required: true
+  bucket-name:
+    description: S3 bucket name for policy files
+    required: true
+  table-name:
+    description: DynamoDB table name
+    required: true
+  lambda-function-name:
+    description: Lambda function name
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Verify Policy Directory
+      run: ls -la policies/ || echo "No policies/ directory"
+      shell: bash
+    - name: Check S3 Bucket
+      id: check-bucket
+      env:
+        AWS_REGION: ${{ inputs.aws-region }}
+        BUCKET_NAME: ${{ inputs.bucket-name }}
+      run: |
+        if aws s3api head-bucket --bucket "$BUCKET_NAME" --region "$AWS_REGION" 2>/dev/null; then
+          echo "bucket_exists=true" >> $GITHUB_OUTPUT
+          aws s3 rm s3://"$BUCKET_NAME"/policies/ --recursive --region "$AWS_REGION" || true
+        else
+          echo "bucket_exists=false" >> $GITHUB_OUTPUT
+        fi
+      shell: bash
+    - name: Trigger Lambda Deployment Workflow
+      if: steps.check-bucket.outputs.bucket_exists == 'false'
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        ENV: ${{ github.event.inputs.environment }}
+        PYTHON_VERSION: ${{ github.event.inputs.python_version }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        BUCKET_NAME: ${{ inputs.bucket-name }}
+        TABLE_NAME: ${{ inputs.table-name }}
+      run: |
+        REF=$([ "$ENV" = "dev" ] && echo "dev" || [ "$ENV" = "nonprod" ] && echo "nonprod" || [ "$ENV" = "main" ] && echo "main" || echo "prod")
+        curl -X POST -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer $GITHUB_TOKEN" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          "https://api.github.com/repos/$REPO/actions/workflows/gitactions-lambda.yml/dispatches" \
+          -d "{\"ref\":\"$REF\",\"inputs\":{\"environment\":\"$ENV\",\"python_version\":\"$PYTHON_VERSION\",\"aws_region\":\"$AWS_REGION\",\"bucket_name\":\"$BUCKET_NAME\",\"stack_name\":\"guardrail-lambda-stack\",\"table_name\":\"$TABLE_NAME\",\"template_file\":\"guardrail-lambda.yml\"}}"
+      shell: bash
+    - name: Wait for Bucket Creation
+      if: steps.check-bucket.outputs.bucket_exists == 'false'
+      env:
+        AWS_REGION: ${{ inputs.aws-region }}
+        BUCKET_NAME: ${{ inputs.bucket-name }}
+      run: |
+        for i in {1..30}; do
+          if aws s3api head-bucket --bucket "$BUCKET_NAME" --region "$AWS_REGION" 2>/dev/null; then
+            exit 0
+          fi
+          sleep 10
+        done
+        echo "Error: Bucket $BUCKET_NAME not created in time"
+        exit 1
+      shell: bash
+    - name: Sync Policies to S3
+      env:
+        AWS_REGION: ${{ inputs.aws-region }}
+        BUCKET_NAME: ${{ inputs.bucket-name }}
+      run: |
+        aws s3 sync policies/ s3://"$BUCKET_NAME"/policies/ --region "$AWS_REGION"
+        aws s3 ls s3://"$BUCKET_NAME"/policies/ --region "$AWS_REGION" || echo "No files in S3"
+      shell: bash
+    - name: Invoke Lambda
+      env:
+        AWS_REGION: ${{ inputs.aws-region }}
+        LAMBDA_NAME: ${{ inputs.lambda-function-name }}
+        TABLE_NAME: ${{ inputs.table-name }}
+        BUCKET_NAME: ${{ inputs.bucket-name }}
+      run: |
+        aws lambda invoke \
+          --function-name "$LAMBDA_NAME" \
+          --payload "{\"table_name\": \"$TABLE_NAME\", \"bucket_name\": \"$BUCKET_NAME\"}" \
+          --region "$AWS_REGION" response.json && cat response.json
+      shell: bash
