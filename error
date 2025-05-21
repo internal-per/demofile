@@ -1,1 +1,7 @@
 Resource handler returned message: "One or more parameter values were invalid: Invalid principal in policy document. (Service: DynamoDb, Status Code: 400, Request ID: RMDS7IS751JDN7FB77O92TTE6NVV4KQNSO5AEMVJF66Q9ASUAAJG) (SDK Attempt Count: 1)" (RequestToken: 15255db1-029b-b55a-047f-425b73475ffe, HandlerErrorCode: InvalidRequest)
+AWS_REGION: e.g., ap-southeast-2
+STACK_NAME: e.g., tarv2-prp-ddb-stack
+TABLE_NAME: e.g., OrgReferencePolicies
+ORGANIZATION_ID: e.g., o-fvwvfa9my5
+GHA_TRUST_ROLE: IAM role for OIDC authentication.
+GHA_CICD_ROLE: IAM role for CI/CD operations.
