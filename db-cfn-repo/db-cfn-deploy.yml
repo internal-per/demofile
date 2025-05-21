@@ -3,27 +3,16 @@ name: Deploy Centralised PRP DDB for TARV2
 on:
   push:
     branches:
-      - dev
-      - staging
-      - nonprod
-      - main
+      - '*'
   pull_request:
     branches:
-      - dev
-      - staging
-      - nonprod
-      - main
+      - '*'
   workflow_dispatch:
     inputs:
       environment:
         description: "Environment to deploy"
         required: true
-        type: choice
-        options:
-          - dev
-          - staging
-          - nonprod
-          - prod
+        type: string
         default: dev
       python_version:
         description: Python version
@@ -31,34 +20,31 @@ on:
         type: string
         default: "3.11"
 
+env:
+  AWS_REGION: ap-southeast-2
+  STACK_NAME: tarv2-prp-ddb-stack
+  TABLE_NAME: OrgReferencePolicies
+  ORGANIZATION_ID: o-fvwvfa9my5
+  ACTIONS_RUNNER_DEBUG: true
+  ACTIONS_STEP_DEBUG: true
+  NO_PROXY: ap-southeast-2.amazonaws.com
+
 permissions:
   id-token: write
   contents: write
 
 jobs:
-  deploy:
+  build-test-deploy:
     runs-on: default
-    environment: ${{ matrix.env }}
+    environment: ${{ inputs.environment || github.ref_name }}
+
     strategy:
       matrix:
-        env:
+        template:
+          - prp-ddb.yml
+        account:
           - dev
-          - staging
-          - nonprod
-          - prod
-        include:
-          - env: dev
-            branch: dev
-          - env: staging
-            branch: staging
-          - env: nonprod
-            branch: nonprod
-          - env: prod
-            branch: main
       fail-fast: false
-
-    # Skip deployment if branch doesn't match environment (except for workflow_dispatch)
-    if: github.event_name == 'workflow_dispatch' || github.ref_name == matrix.branch
 
     steps:
       - name: Checkout repository
@@ -75,60 +61,62 @@ jobs:
           pip install -i https://artifactory.internal.cba/api/pypi/org.python.pypi/simple/ --upgrade awscli
         shell: bash
 
+      - name: Display env details
+        id: display_info
+        run: |
+          echo "${{ env.GHA_TRUST_ROLE }}"
+          echo "${{ vars.GHA_TRUST_ROLE }}"
+          echo "${{ env.GHA_CICD_ROLE }}"
+          echo "${{ vars.GHA_TRUST_ROLE }}"
+          echo "${{ env.AWS_REGION }}"
+          env
+    
+    
       - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.GHA_TRUST_ROLE }}
-          role-session-name: githubsession-${{ matrix.env }}
-          aws-region: ${{ vars.AWS_REGION }}
-          aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+          role-to-assume: ${{ vars.GHA_TRUST_ROLE }}
+          role-session-name: githubsession
+          aws-region: ${{ env.AWS_REGION }} 
 
       - name: Configure AWS credentials (AssumeRole)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.GHA_CICD_ROLE }}
-          role-session-name: githubsession-${{ matrix.env }}
-          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ vars.GHA_CICD_ROLE }}
+          role-session-name: githubsession
+          aws-region: ${{ env.AWS_REGION }}
           role-chaining: true
+
+      - name: get-caller-identity
+        run: aws sts get-caller-identity
 
       - name: Validate CloudFormation Template
         run: |
-          echo "Validating template: prp-ddb.yml for ${{ matrix.env }}"
+          echo "Validating template: ${{ matrix.template }}"
           aws cloudformation validate-template \
-            --template-body file://cloudformation/prp-ddb.yml \
-            --region ${{ vars.AWS_REGION }}
+            --template-body file://cloudformation/${{ matrix.template }} \
+            --region ${{ env.AWS_REGION }}
         env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_REGION: ${{ env.AWS_REGION }}
 
       - name: Deploy CloudFormation Stack
         run: |
-          echo "Deploying stack for environment: ${{ matrix.env }}"
+          echo "Deploying stack for template: ${{ matrix.template }}"
           set +e
-          for attempt in {1..3}; do
-            aws cloudformation deploy \
-              --template-file cloudformation/prp-ddb.yml \
-              --stack-name ${{ vars.STACK_NAME }}-${{ matrix.env }} \
-              --parameter-overrides OrganizationId=${{ vars.ORGANIZATION_ID }} Environment=${{ matrix.env }} \
-              --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-              --region ${{ vars.AWS_REGION }} \
-              --no-fail-on-empty-changeset
-            EXIT_CODE=$?
-            if [ $EXIT_CODE -eq 0 ]; then
-              echo "Deployment succeeded for ${{ matrix.env }}"
-              break
-            fi
-            echo "Deployment attempt $attempt failed for ${{ matrix.env }}"
-            if [ $attempt -lt 3 ]; then
-              echo "Retrying in 10 seconds..."
-              sleep 10
-            fi
-          done
+          aws cloudformation deploy \
+            --template-file cloudformation/${{ matrix.template }} \
+            --stack-name ${{ env.STACK_NAME }} \
+            --parameter-overrides OrganizationId=${{ env.ORGANIZATION_ID }} \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --region ${{ env.AWS_REGION }} \
+            --no-fail-on-empty-changeset
+          EXIT_CODE=$?
           if [ $EXIT_CODE -ne 0 ]; then
-            echo "Deployment failed after 3 attempts, checking stack status..."
-            if aws cloudformation describe-stacks --stack-name ${{ vars.STACK_NAME }}-${{ matrix.env }} --region ${{ vars.AWS_REGION }} > /dev/null 2>&1; then
+            echo "Deployment failed, checking stack status..."
+            if aws cloudformation describe-stacks --stack-name ${{ env.STACK_NAME }} --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
               STACK_STATUS=$(aws cloudformation describe-stacks \
-                --stack-name ${{ vars.STACK_NAME }}-${{ matrix.env }} \
-                --region ${{ vars.AWS_REGION }} \
+                --stack-name ${{ env.STACK_NAME }} \
+                --region ${{ env.AWS_REGION }} \
                 --query 'Stacks[0].StackStatus' \
                 --output text)
               echo "Stack status: $STACK_STATUS"
@@ -147,20 +135,20 @@ jobs:
             fi
           fi
         env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_REGION: ${{ env.AWS_REGION }}
 
       - name: Populate DynamoDB with Initial Data
         run: |
-          echo "Inserting initial data into table: ${{ vars.TABLE_NAME }} for ${{ matrix.env }}"
+          echo "Inserting initial data into table: ${{ env.TABLE_NAME }}"
           aws dynamodb put-item \
-            --table-name ${{ vars.TABLE_NAME }} \
+            --table-name ${{ env.TABLE_NAME }} \
             --item '{
                 "services": {"S": "sample"},
-                "version": {"N": "1"},
-                "PolicyJSON": {
-                  "S": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"test:sampledata\"],\"Resource\":\"${{ vars.ARN_PREFIX }}\",\"Effect\":\"Allow\"}]}"
+                "version": {"S": "v1"},
+                "approved_policy_actions": {
+                  "S": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"test:sampledata\"],\"Resource\":\"*\",\"Effect\":\"Allow\"}]}"
                 }
               }' \
-            --region ${{ vars.AWS_REGION }}
+            --region ${{ env.AWS_REGION }}
         env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
+          AWS_REGION: ${{ env.AWS_REGION }}
