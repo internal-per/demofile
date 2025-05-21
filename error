@@ -8,10 +8,12 @@ GHA_CICD_ROLE: IAM role for CI/CD operations.
 LAMBDA_ROLE_NAME: e.g., GuardrailPolicyUpdateRole
 
 
- Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 28, Col: 25): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.GHA_TRUST_ROLE
-Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 30, Col: 21): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.AWS_REGION
-Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 34, Col: 25): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.GHA_CICD_ROLE
-Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 36, Col: 21): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.AWS_REGION
-Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 42, Col: 12): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.CFN_TEMPLATE_PATH
-Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 49, Col: 12): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.CFN_TEMPLATE_PATH
-Error: /home/runner/_work/aws-ddb-tetris-tarv2/aws-ddb-tetris-tarv2/./.github/actions/deploy/action.yml (Line: 90, Col: 12): Unrecognized named-value: 'vars'. Located at position 1 within expression: vars.TABLE_NAME
+GHA_TRUST_ROLE: arn:aws:iam::123456789012:role/GHATrustRole
+GHA_CICD_ROLE: arn:aws:iam::123456789012:role/GHACICDRole
+PYTHON_VERSION: 3.11
+AWS_REGION: ap-southeast-2
+BUCKET_NAME: guardrail-policy-deploy-temp-dev
+TABLE_NAME: prp-db-org-policy-dev
+LAMBDA_FUNCTION_NAME: GuardrailPolicyUpdate-dev
+STACK_NAME: guardrail-lambda-stack-dev
+TEMPLATE_FILE: guardrail-lambda.yml
