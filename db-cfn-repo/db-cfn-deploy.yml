@@ -40,6 +40,8 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
     environment: dev
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Deploy to dev
         uses: ./.github/actions/deploy
         with:
@@ -54,6 +56,8 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.environment == 'nonprod')
     environment: nonprod
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Deploy to nonprod
         uses: ./.github/actions/deploy
         with:
@@ -68,6 +72,8 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
     environment: staging
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Deploy to staging
         uses: ./.github/actions/deploy
         with:
@@ -82,6 +88,8 @@ jobs:
       (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod')
     environment: prod
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Deploy to prod
         uses: ./.github/actions/deploy
         with:
