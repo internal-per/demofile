@@ -12,4 +12,6 @@ An error occurred (ValidationException) when calling the PutItem operation: One 
 
 
 
-You have an error in your yaml syntax on line 54
+
+The workflow is not valid. .github/workflows/deploy.yml (Line: 42, Col: 5): Unexpected value 'uses' .github/workflows/deploy.yml (Line: 43, Col: 5): Unexpected value 'with'
+
