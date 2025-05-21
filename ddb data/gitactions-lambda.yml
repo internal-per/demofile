@@ -1,0 +1,91 @@
+name: Deploy Lambda
+on:
+  push:
+    branches:
+      - dev
+      - 'ttrs-*'
+  pull_request:
+    types: [closed]
+    branches:
+      - nonprod
+      - main
+      - prod
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment (dev, nonprod, main, prod)
+        required: true
+        type: string
+      python_version:
+        description: Python version
+        required: true
+        type: string
+      aws_region:
+        description: AWS region
+        required: true
+        type: string
+      bucket_name:
+        description: S3 bucket name
+        required: true
+        type: string
+      stack_name:
+        description: CloudFormation stack name
+        required: true
+        type: string
+      table_name:
+        description: DynamoDB table name
+        required: true
+        type: string
+      template_file:
+        description: CloudFormation template file
+        required: true
+        type: string
+permissions:
+  id-token: write
+  contents: write
+jobs:
+  DeployLambda:
+    runs-on: default
+    strategy:
+      matrix:
+        environment: [dev, nonprod, main, prod]
+      max-parallel: 1
+    environment: ${{ matrix.environment }}
+    if: |
+      (matrix.environment == 'dev' && github.event_name == 'push' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'ttrs-'))) ||
+      (matrix.environment == 'nonprod' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'nonprod' && github.event.pull_request.head.ref == 'dev') ||
+      (matrix.environment == 'main' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.ref == 'nonprod') ||
+      (matrix.environment == 'prod' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'prod' && github.event.pull_request.head.ref == 'main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == matrix.environment)
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Setup Environment
+        uses: ./.github/actions/deploy
+        with:
+          python-version: ${{ vars.PYTHON_VERSION }}
+          gha-trust-role: ${{ vars.GHA_TRUST_ROLE }}
+          gha-cicd-role: ${{ vars.GHA_CICD_ROLE }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Validate Template
+        run: |
+          aws cloudformation validate-template \
+            --template-body file://cloudformation/${{ vars.TEMPLATE_FILE }} \
+            --region ${{ vars.AWS_REGION }}
+      - name: Deploy Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file cloudformation/${{ vars.TEMPLATE_FILE }} \
+            --stack-name ${{ vars.STACK_NAME }} \
+            --parameter-overrides \
+              TableName=${{ vars.TABLE_NAME }} \
+              BucketName=${{ vars.BUCKET_NAME }} \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --region ${{ vars.AWS_REGION }} \
+            --no-fail-on-empty-changeset || \
+          { STATUS=$(aws cloudformation describe-stacks --stack-name ${{ vars.STACK_NAME }} --region ${{ vars.AWS_REGION }} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "NOT_FOUND"); \
+            case "$STATUS" in \
+              ROLLBACK_COMPLETE|UPDATE_ROLLBACK_COMPLETE) exit 1;; \
+              CREATE_COMPLETE|UPDATE_COMPLETE) echo "Stack up to date";; \
+              *) exit 1;; \
+            esac; }
