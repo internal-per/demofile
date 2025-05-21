@@ -1,0 +1,99 @@
+# AWS CloudFormation template to deploy a DynamoDB table for TARV2 centralized policy storage
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Creates a DynamoDB table named OrgReferencePolicies-<Environment> to store policy data,
+  with environment-specific provisioning and access policies.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment Configuration
+        Parameters:
+          - Environment
+      - Label:
+          default: Table Configuration
+        Parameters:
+          - TableName
+          - OrganizationId
+
+Parameters:
+  # The deployment environment (e.g., dev, nonprod, staging, prod)
+  Environment:
+    Type: String
+    AllowedValues: [dev, nonprod, staging, prod]
+    Description: Specifies the deployment environment for the table
+  # Base name of the DynamoDB table (appended with environment, e.g., OrgReferencePolicies-dev)
+  TableName:
+    Type: String
+    Description: Base name for the DynamoDB table to store policies
+  # AWS Organization ID for access control in the resource policy
+  OrganizationId:
+    Type: String
+    Description: AWS Organization ID to restrict access to specific organizations
+
+Conditions:
+  # Condition to check if the environment is prod for higher throughput
+  IsProd: !Equals [ !Ref Environment, prod ]
+
+Resources:
+  # DynamoDB table to store policy data
+  OrgPolicyTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      # Table name constructed as <TableName>-<Environment>
+      TableName: !Sub "${TableName}-${Environment}"
+      # Attribute definitions for partition and sort keys
+      AttributeDefinitions:
+        - AttributeName: services
+          AttributeType: S
+        - AttributeName: version
+          AttributeType: N
+      # Key schema with services as partition key and version as sort key
+      KeySchema:
+        - AttributeName: services
+          KeyType: HASH
+        - AttributeName: version
+          KeyType: RANGE
+      # Use provisioned billing mode
+      BillingMode: PROVISIONED
+      # Set read/write capacity (10 for prod, 5 for others)
+      ProvisionedThroughput:
+        ReadCapacityUnits: !If [IsProd, 10, 5]
+        WriteCapacityUnits: !If [IsProd, 10, 5]
+      # Resource policy to control access to the table
+      ResourcePolicy:
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            # Allow specific Lambda role to read, update, and describe the table
+            - Sid: AllowLambdaAccess
+              Effect: Allow
+              Principal:
+                AWS: !Sub arn:aws:iam::${AWS::AccountId}:role/GuardrailPolicyUpdateRole
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+                - dynamodb:DescribeTable
+              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}
+            # Allow accounts in the specified organization to read the table
+            - Sid: AllowOrgAccess
+              Effect: Allow
+              Principal:
+                AWS: '*'
+              Action:
+                - dynamodb:GetItem
+              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}
+              Condition:
+                StringEquals:
+                  aws:PrincipalOrgID: !Ref OrganizationId
+
+Outputs:
+  # ARN of the created DynamoDB table
+  TableArn:
+    Description: ARN of the OrgReferencePolicies DynamoDB table
+    Value: !GetAtt OrgPolicyTable.Arn
+  # Name of the created DynamoDB table
+  TableName:
+    Description: Name of the OrgReferencePolicies DynamoDB table
+    Value: !Ref OrgPolicyTable
