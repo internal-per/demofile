@@ -33,153 +33,26 @@ permissions:
   contents: write   # Required for checking out the repository
 
 jobs:
-  # Job for deploying to dev environment (triggered by push to dev or TAR-* branches)
-  deploy-dev:
-    # Use the default runner (typically resolves to the latest Ubuntu runner)
+  deploy:
     runs-on: default
-    # Only run for dev or TAR-* branches, or manual trigger with dev environment
-    if: github.event_name == 'push' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'TAR-')) || (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
-    environment: dev
-    env:
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      STACK_NAME: ${{ vars.STACK_NAME }}
-      TABLE_NAME: ${{ vars.TABLE_NAME }}
-      ORGANIZATION_ID: ${{ vars.ORGANIZATION_ID }}
-      LAMBDA_ROLE_NAME: ${{ vars.LAMBDA_ROLE_NAME }}
-      # Path to the CloudFormation template (e.g., cloudformation/prp-ddb.yml)
-      CFN_TEMPLATE_PATH: ${{ vars.CFN_TEMPLATE_PATH }}
-      ACTIONS_RUNNER_DEBUG: true
-      ACTIONS_STEP_DEBUG: true
-
-    steps:
-      # Check out the repository code
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # Set up Python environment for AWS CLI
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ inputs.python_version || '3.11' }}
-
-      # Install AWS CLI and dependencies
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install awscli
-        shell: bash
-
-      # Validate that the branch is deploying to the dev environment
-      - name: Validate Branch to Environment Mapping
-        run: |
-          if [[ "${{ github.ref_name }}" != "dev" && ! "${{ github.ref_name }}" =~ ^TAR- ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.environment }}" != "dev" ]]; then
-            echo "Error: Only dev and TAR-* branches or manual dev triggers can deploy to dev environment"
-            exit 1
-          fi
-
-      # Configure AWS credentials using OIDC
-      - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.GHA_TRUST_ROLE }}
-          role-session-name: githubsession
-          aws-region: ${{ vars.AWS_REGION }}
-
-      # Assume the CI/CD role for deployment
-      - name: Configure AWS credentials (AssumeRole)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.GHA_CICD_ROLE }}
-          role-session-name: githubsession
-          aws-region: ${{ vars.AWS_REGION }}
-          role-chaining: true
-
-      # Verify AWS identity for debugging
-      - name: Verify AWS Caller Identity
-        run: aws sts get-caller-identity
-
-      # Validate the CloudFormation template
-      - name: Validate CloudFormation Template
-        run: |
-          echo "Validating template: ${{ vars.CFN_TEMPLATE_PATH }}"
-          aws cloudformation validate-template \
-            --template-body file://${{ vars.CFN_TEMPLATE_PATH }} \
-            --region ${{ vars.AWS_REGION }}
-
-      # Deploy the CloudFormation stack
-      - name: Deploy CloudFormation Stack
-        run: |
-          echo "Deploying stack for environment: dev"
-          set +e
-          aws cloudformation deploy \
-            --template-file ${{ vars.CFN_TEMPLATE_PATH }} \
-            --stack-name ${{ vars.STACK_NAME }} \
-            --parameter-overrides \
-              Environment=dev \
-              TableName=${{ vars.TABLE_NAME }} \
-              OrganizationId=${{ vars.ORGANIZATION_ID }} \
-              LambdaRoleName=${{ vars.LAMBDA_ROLE_NAME }} \
-            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-            --region ${{ vars.AWS_REGION }} \
-            --no-fail-on-empty-changeset
-          EXIT_CODE=$?
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "Deployment failed, checking stack status..."
-            if aws cloudformation describe-stacks --stack-name ${{ vars.STACK_NAME }} --region ${{ vars.AWS_REGION }} > /dev/null 2>&1; then
-              STACK_STATUS=$(aws cloudformation describe-stacks \
-                --stack-name ${{ vars.STACK_NAME }} \
-                --region ${{ vars.AWS_REGION }} \
-                --query 'Stacks[0].StackStatus' \
-                --output text)
-              echo "Stack status: $STACK_STATUS"
-              if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
-                echo "Stack is in $STACK_STATUS state. Exiting with failure."
-                exit 1
-              elif [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
-                echo "Stack is already up to date or created. Continuing..."
-              else
-                echo "Unexpected stack status: $STACK_STATUS. Exiting with failure."
-                exit $EXIT_CODE
-              fi
-            else
-              echo "Stack does not exist or another error occurred. Exiting with failure."
-              exit $EXIT_CODE
-            fi
-          fi
-
-      # Populate the DynamoDB table with initial data
-      - name: Populate DynamoDB with Initial Data
-        run: |
-          echo "Inserting initial data into table: ${{ vars.TABLE_NAME }}-dev"
-          aws dynamodb put-item \
-            --table-name ${{ vars.TABLE_NAME }}-dev \
-            --item '{
-                "services": {"S": "sample"},
-                "version": {"S": "v1"},
-                "approved_policy_actions": {
-                  "S": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"test:sampledata\"],\"Resource\":\"*\",\"Effect\":\"Allow\"}]}"
-                }
-              }' \
-            --region ${{ vars.AWS_REGION }}
-
-  # Job for deploying to nonprod environment (triggered by PR merge from dev to nonprod)
-  deploy-nonprod:
-    runs-on: default
-    # Only run on PR merge from dev to nonprod or manual trigger with nonprod environment
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'nonprod' && github.event.pull_request.head.ref == 'dev' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'nonprod')
-    needs: deploy-dev
-    environment: nonprod
-    env:
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      STACK_NAME: ${{ vars.STACK_NAME }}
-      TABLE_NAME: ${{ vars.TABLE_NAME }}
-      ORGANIZATION_ID: ${{ vars.ORGANIZATION_ID }}
-      LAMBDA_ROLE_NAME: ${{ vars.LAMBDA_ROLE_NAME }}
-      CFN_TEMPLATE_PATH: ${{ vars.CFN_TEMPLATE_PATH }}
-      NO_PROXY: ${{ vars.AWS_REGION }}.amazonaws.com
-      ACTIONS_RUNNER_DEBUG: true
-      ACTIONS_STEP_DEBUG: true
-
+    strategy:
+      matrix:
+        environment: [dev, nonprod, staging, prod]
+        include:
+          - environment: dev
+            previous: null
+          - environment: nonprod
+            previous: dev
+          - environment: staging
+            previous: nonprod
+          - environment: prod
+            previous: staging
+    if: |
+      (github.event_name == 'push' && matrix.environment == 'dev' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'TAR-'))) ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == matrix.environment && github.event.pull_request.head.ref == matrix.previous) ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == matrix.environment)
+    needs: ${{ matrix.previous != null ? 'deploy-' + matrix.previous : null }}
+    environment: ${{ matrix.environment }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -222,13 +95,13 @@ jobs:
 
       - name: Deploy CloudFormation Stack
         run: |
-          echo "Deploying stack for environment: nonprod"
+          echo "Deploying stack for environment: ${{ matrix.environment }}"
           set +e
           aws cloudformation deploy \
             --template-file ${{ vars.CFN_TEMPLATE_PATH }} \
             --stack-name ${{ vars.STACK_NAME }} \
             --parameter-overrides \
-              Environment=nonprod \
+              Environment=${{ matrix.environment }} \
               TableName=${{ vars.TABLE_NAME }} \
               OrganizationId=${{ vars.ORGANIZATION_ID }} \
               LambdaRoleName=${{ vars.LAMBDA_ROLE_NAME }} \
@@ -261,211 +134,16 @@ jobs:
           fi
 
       - name: Populate DynamoDB with Initial Data
+        if: matrix.environment == 'dev' || matrix.environment == 'nonprod'
         run: |
-          echo "Inserting initial data into table: ${{ vars.TABLE_NAME }}-nonprod"
+          echo "Inserting initial data into table: ${{ vars.TABLE_NAME }}-${{ matrix.environment }}"
           aws dynamodb put-item \
-            --table-name ${{ vars.TABLE_NAME }}-nonprod \
+            --table-name ${{ vars.TABLE_NAME }}-${{ matrix.environment }} \
             --item '{
                 "services": {"S": "sample"},
-                "version": {"S": "v1"},
-                "approved_policy_actions": {
+                "version": {"N": "1"},
+                "PolicyJSON": {
                   "S": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"test:sampledata\"],\"Resource\":\"*\",\"Effect\":\"Allow\"}]}"
                 }
               }' \
             --region ${{ vars.AWS_REGION }}
-
-  # Job for deploying to staging environment (triggered by PR merge from nonprod to staging)
-  deploy-staging:
-    runs-on: default
-    # Only run on PR merge from nonprod to staging or manual trigger with staging environment
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'staging' && github.event.pull_request.head.ref == 'nonprod' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
-    needs: deploy-nonprod
-    environment: staging
-    env:
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      STACK_NAME: ${{ vars.STACK_NAME }}
-      TABLE_NAME: ${{ vars.TABLE_NAME }}
-      ORGANIZATION_ID: ${{ vars.ORGANIZATION_ID }}
-      LAMBDA_ROLE_NAME: ${{ vars.LAMBDA_ROLE_NAME }}
-      CFN_TEMPLATE_PATH: ${{ vars.CFN_TEMPLATE_PATH }}
-      NO_PROXY: ${{ vars.AWS_REGION }}.amazonaws.com
-      ACTIONS_RUNNER_DEBUG: true
-      ACTIONS_STEP_DEBUG: true
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ inputs.python_version || '3.11' }}
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install awscli
-        shell: bash
-
-      - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.GHA_TRUST_ROLE }}
-          role-session-name: githubsession
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Configure AWS credentials (AssumeRole)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.GHA_CICD_ROLE }}
-          role-session-name: githubsession
-          aws-region: ${{ vars.AWS_REGION }}
-          role-chaining: true
-
-      - name: Verify AWS Caller Identity
-        run: aws sts get-caller-identity
-
-      - name: Validate CloudFormation Template
-        run: |
-          echo "Validating template: ${{ vars.CFN_TEMPLATE_PATH }}"
-          aws cloudformation validate-template \
-            --template-body file://${{ vars.CFN_TEMPLATE_PATH }} \
-            --region ${{ vars.AWS_REGION }}
-
-      - name: Deploy CloudFormation Stack
-        run: |
-          echo "Deploying stack for environment: staging"
-          set +e
-          aws cloudformation deploy \
-            --template-file ${{ vars.CFN_TEMPLATE_PATH }} \
-            --stack-name ${{ vars.STACK_NAME }} \
-            --parameter-overrides \
-              Environment=staging \
-              TableName=${{ vars.TABLE_NAME }} \
-              OrganizationId=${{ vars.ORGANIZATION_ID }} \
-              LambdaRoleName=${{ vars.LAMBDA_ROLE_NAME }} \
-            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-            --region ${{ vars.AWS_REGION }} \
-            --no-fail-on-empty-changeset
-          EXIT_CODE=$?
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "Deployment failed, checking stack status..."
-            if aws cloudformation describe-stacks --stack-name ${{ vars.STACK_NAME }} --region ${{ vars.AWS_REGION }} > /dev/null 2>&1; then
-              STACK_STATUS=$(aws cloudformation describe-stacks \
-                --stack-name ${{ vars.STACK_NAME }} \
-                --region ${{ vars.AWS_REGION }} \
-                --query 'Stacks[0].StackStatus' \
-                --output text)
-              echo "Stack status: $STACK_STATUS"
-              if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
-                echo "Stack is in $STACK_STATUS state. Exiting with failure."
-                exit 1
-              elif [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
-                echo "Stack is already up to date or created. Continuing..."
-              else
-                echo "Unexpected stack status: $STACK_STATUS. Exiting with failure."
-                exit $EXIT_CODE
-              fi
-            else
-              echo "Stack does not exist or another error occurred. Exiting with failure."
-              exit $EXIT_CODE
-            fi
-          fi
-
-  # Job for deploying to prod environment (triggered by PR merge from staging to prod)
-  deploy-prod:
-    runs-on: default
-    # Only run on PR merge from staging to prod or manual trigger with prod environment
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'prod' && github.event.pull_request.head.ref == 'staging' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod')
-    needs: deploy-staging
-    environment: prod
-    env:
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      STACK_NAME: ${{ vars.STACK_NAME }}
-      TABLE_NAME: ${{ vars.TABLE_NAME }}
-      ORGANIZATION_ID: ${{ vars.ORGANIZATION_ID }}
-      LAMBDA_ROLE_NAME: ${{ vars.LAMBDA_ROLE_NAME }}
-      CFN_TEMPLATE_PATH: ${{ vars.CFN_TEMPLATE_PATH }}
-      NO_PROXY: ${{ vars.AWS_REGION }}.amazonaws.com
-      ACTIONS_RUNNER_DEBUG: true
-      ACTIONS_STEP_DEBUG: true
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ inputs.python_version || '3.11' }}
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install awscli
-        shell: bash
-
-      - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.GHA_TRUST_ROLE }}
-          role-session-name: githubsession
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Configure AWS credentials (AssumeRole)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.GHA_CICD_ROLE }}
-          role-session-name: githubsession
-          aws-region: ${{ vars.AWS_REGION }}
-          role-chaining: true
-
-      - name: Verify AWS Caller Identity
-        run: aws sts get-caller-identity
-
-      - name: Validate CloudFormation Template
-        run: |
-          echo "Validating template: ${{ vars.CFN_TEMPLATE_PATH }}"
-          aws cloudformation validate-template \
-            --template-body file://${{ vars.CFN_TEMPLATE_PATH }} \
-            --region ${{ vars.AWS_REGION }}
-
-      - name: Deploy CloudFormation Stack
-        run: |
-          echo "Deploying stack for environment: prod"
-          set +e
-          aws cloudformation deploy \
-            --template-file ${{ vars.CFN_TEMPLATE_PATH }} \
-            --stack-name ${{ vars.STACK_NAME }} \
-            --parameter-overrides \
-              Environment=prod \
-              TableName=${{ vars.TABLE_NAME }} \
-              OrganizationId=${{ vars.ORGANIZATION_ID }} \
-              LambdaRoleName=${{ vars.LAMBDA_ROLE_NAME }} \
-            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-            --region ${{ vars.AWS_REGION }} \
-            --no-fail-on-empty-changeset
-          EXIT_CODE=$?
-          if [ $EXIT_CODE -ne 0 ]; then
-            echo "Deployment failed, checking stack status..."
-            if aws cloudformation describe-stacks --stack-name ${{ vars.STACK_NAME }} --region ${{ vars.AWS_REGION }} > /dev/null 2>&1; then
-              STACK_STATUS=$(aws cloudformation describe-stacks \
-                --stack-name ${{ vars.STACK_NAME }} \
-                --region ${{ vars.AWS_REGION }} \
-                --query 'Stacks[0].StackStatus' \
-                --output text)
-              echo "Stack status: $STACK_STATUS"
-              if [[ "$STACK_STATUS" == "ROLLBACK_COMPLETE" || "$STACK_STATUS" == "UPDATE_ROLLBACK_COMPLETE" ]]; then
-                echo "Stack is in $STACK_STATUS state. Exiting with failure."
-                exit 1
-              elif [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
-                echo "Stack is already up to date or created. Continuing..."
-              else
-                echo "Unexpected stack status: $STACK_STATUS. Exiting with failure."
-                exit $EXIT_CODE
-              fi
-            else
-              echo "Stack does not exist or another error occurred. Exiting with failure."
-              exit $EXIT_CODE
-            fi
-          fi
