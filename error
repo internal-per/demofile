@@ -5,7 +5,7 @@ TABLE_NAME: e.g., OrgReferencePolicies
 ORGANIZATION_ID: e.g., o-fvwvfa9my5
 GHA_TRUST_ROLE: IAM role for OIDC authentication.
 GHA_CICD_ROLE: IAM role for CI/CD operations.
-
+LAMBDA_ROLE_NAME: e.g., GuardrailPolicyUpdateRole
 
 
 The workflow is not valid. .github/workflows/deploy.yml (Line: 77, Col: 9): Unrecognized named-value: 'matrix'. Located at position 20 within expression: github.ref_name == matrix.branch || startsWith(github.ref_name, 'TAR-')
