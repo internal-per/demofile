@@ -34,48 +34,56 @@ permissions:
 
 jobs:
   deploy-dev:
-    runs-on: ubuntu-latest
+    runs-on: default
     if: |
       (github.event_name == 'push' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'TAR-'))) ||
       (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
     environment: dev
-    uses: ./.github/workflows/deploy-reusable.yml
-    with:
-      environment: dev
-      python-version: ${{ inputs.python_version || '3.11' }}
+    steps:
+      - name: Deploy to dev
+        uses: ./.github/workflows/deploy-reusable.yml
+        with:
+          environment: dev
+          python-version: ${{ inputs.python_version || '3.11' }}
 
   deploy-nonprod:
-    runs-on: ubuntu-latest
+    runs-on: default
     needs: deploy-dev
     if: |
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'nonprod' && github.event.pull_request.head.ref == 'dev') ||
       (github.event_name == 'workflow_dispatch' && inputs.environment == 'nonprod')
     environment: nonprod
-    uses: ./.github/workflows/deploy-reusable.yml
-    with:
-      environment: nonprod
-      python-version: ${{ inputs.python_version || '3.11' }}
+    steps:
+      - name: Deploy to nonprod
+        uses: ./.github/workflows/deploy-reusable.yml
+        with:
+          environment: nonprod
+          python-version: ${{ inputs.python_version || '3.11' }}
 
   deploy-staging:
-    runs-on: ubuntu-latest
+    runs-on: default
     needs: deploy-nonprod
     if: |
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'staging' && github.event.pull_request.head.ref == 'nonprod') ||
       (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
     environment: staging
-    uses: ./.github/workflows/deploy-reusable.yml
-    with:
-      environment: staging
-      python-version: ${{ inputs.python_version || '3.11' }}
+    steps:
+      - name: Deploy to staging
+        uses: ./.github/workflows/deploy-reusable.yml
+        with:
+          environment: staging
+          python-version: ${{ inputs.python_version || '3.11' }}
 
   deploy-prod:
-    runs-on: ubuntu-latest
+    runs-on: default
     needs: deploy-staging
     if: |
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'prod' && github.event.pull_request.head.ref == 'staging') ||
       (github.event_name == 'workflow_dispatch' && inputs.environment == 'prod')
     environment: prod
-    uses: ./.github/workflows/deploy-reusable.yml
-    with:
-      environment: prod
-      python-version: ${{ inputs.python_version || '3.11' }}
+    steps:
+      - name: Deploy to prod
+        uses: ./.github/workflows/deploy-reusable.yml
+        with:
+          environment: prod
+          python-version: ${{ inputs.python_version || '3.11' }}
