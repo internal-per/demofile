@@ -12,6 +12,8 @@ An error occurred (ValidationException) when calling the PutItem operation: One 
 
 
 
+Can't find 'action.yml', 'action.yaml' or 'Dockerfile' under '/home/runner/_work/aws-tarv2/.github/actions/deploy'. Did you forget to run actions/checkout before running your local action?
+
 
 
 ${{ github.repository }}/.github/workflows/deploy-reusable.yml@main is not allowed to be used in aws-ddb-tetris-tarv2. Actions in this workflow must be: within a repository that belongs to your Enterprise account, created by GitHub, verified in the GitHub Marketplace, or matching the following: astral-sh/setup-uv@*, burrunan/gradle-cache-action@*, davelosert/vitest-coverage-report-action@*, dekinderfiets/pr-description-enforcer@*, docker://*.docker.internal.cba/*, dorny/paths-filter@*, dorny/test-reporter@*, grafana/k6-action@*, peaceiris/actions-gh-pages@*, pnpm/action-setup@*, technote-space/broken-link-checker-action@*.
