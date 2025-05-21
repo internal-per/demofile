@@ -41,7 +41,7 @@ jobs:
     environment: dev
     steps:
       - name: Deploy to dev
-        uses: ${{ github.repository }}/.github/workflows/deploy-reusable.yml@main
+        uses: ./.github/actions/deploy
         with:
           environment: dev
           python-version: ${{ inputs.python_version || '3.11' }}
@@ -55,7 +55,7 @@ jobs:
     environment: nonprod
     steps:
       - name: Deploy to nonprod
-        uses: ${{ github.repository }}/.github/workflows/deploy-reusable.yml@main
+        uses: ./.github/actions/deploy
         with:
           environment: nonprod
           python-version: ${{ inputs.python_version || '3.11' }}
@@ -69,7 +69,7 @@ jobs:
     environment: staging
     steps:
       - name: Deploy to staging
-        uses: ${{ github.repository }}/.github/workflows/deploy-reusable.yml@main
+        uses: ./.github/actions/deploy
         with:
           environment: staging
           python-version: ${{ inputs.python_version || '3.11' }}
@@ -83,7 +83,7 @@ jobs:
     environment: prod
     steps:
       - name: Deploy to prod
-        uses: ${{ github.repository }}/.github/workflows/deploy-reusable.yml@main
+        uses: ./.github/actions/deploy
         with:
           environment: prod
           python-version: ${{ inputs.python_version || '3.11' }}
