@@ -6,7 +6,7 @@ on:
   # Trigger on push to main branch
   push:
     branches:
-      - main
+      - dev
   # Allow manual triggering with configurable inputs
   workflow_dispatch:
     inputs:
@@ -33,7 +33,7 @@ on:
         description: S3 bucket name for policy files
         required: true
         type: string
-        default: grd-pol-123456789012
+        default: guardrail-policy-deploy-temp
       # CloudFormation stack name
       stack_name:
         description: CloudFormation stack name
@@ -57,8 +57,8 @@ on:
 env:
   # AWS region, defaults to input or ap-southeast-2
   AWS_REGION: ${{ inputs.aws_region || 'ap-southeast-2' }}
-  # S3 bucket name, defaults to input or grd-pol-123456789012
-  BUCKET_NAME: ${{ inputs.bucket_name || 'grd-pol-123456789012' }}
+  # S3 bucket name
+  BUCKET_NAME: ${{ inputs.bucket_name || 'guardrail-policy-deploy-temp' }}
   # CloudFormation stack name, defaults to input or guardrail-lambda-stack
   STACK_NAME: ${{ inputs.stack_name || 'guardrail-lambda-stack' }}
   # DynamoDB table name, defaults to input or prp-db-org-policy
@@ -162,4 +162,4 @@ jobs:
             fi
           fi
         env:
-          AWS_REGION: ${{ env.AWS_REGION }}
+          AWS_REGION: ${{ env.AWS_REGION }}a
