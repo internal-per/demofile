@@ -52,34 +52,19 @@ Resources:
             - Sid: AllowLambdaAccess
               Effect: Allow
               Principal:
-                AWS: !Sub
-                  - arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:GuardrailPolicyUpdate
-                  - { }
+                AWS: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:GuardrailPolicyUpdate"
               Action:
                 - dynamodb:GetItem
                 - dynamodb:UpdateItem
                 - dynamodb:DescribeTable
-              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}
-            - Sid: AllowOrg1Access
+              Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}"
+            - Sid: AllowCrossAccountAccess
               Effect: Allow
               Principal:
-                AWS: '*'
+                AWS: "123456789012"  # Replace with your actual trusted AWS account ID
               Action:
                 - dynamodb:GetItem
-              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}
-              Condition:
-                StringEquals:
-                  aws:PrincipalOrgID: o-456345
-            - Sid: AllowOrg2Access
-              Effect: Allow
-              Principal:
-                AWS: '*'
-              Action:
-                - dynamodb:GetItem
-              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}
-              Condition:
-                StringEquals:
-                  aws:PrincipalOrgID: o-erf5343
+              Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}"
       Tags:
         - Key: Environment
           Value: !Ref Environment
