@@ -35,15 +35,25 @@ permissions:
 
 jobs:
   build-test-deploy:
-    runs-on: default
+    # Use a standard Ubuntu runner for consistency
+    runs-on: ubuntu-latest
+    # Dynamically set the GitHub environment based on input or branch
     environment: ${{ inputs.environment || github.ref_name }}
 
     env:
+      # AWS region for deployment (e.g., ap-southeast-2)
       AWS_REGION: ${{ vars.AWS_REGION }}
+      # CloudFormation stack name
       STACK_NAME: ${{ vars.STACK_NAME }}
+      # Base table name (appended with environment, e.g., OrgReferencePolicies-dev)
       TABLE_NAME: ${{ vars.TABLE_NAME }}
+      # AWS Organization ID for access control
       ORGANIZATION_ID: ${{ vars.ORGANIZATION_ID }}
+      # Bypass proxy for AWS API calls in the specified region (optional, for proxy environments)
+      NO_PROXY: ${{ vars.AWS_REGION }}.amazonaws.com
+      # Enable debug logging for GitHub Actions runner
       ACTIONS_RUNNER_DEBUG: true
+      # Enable debug logging for individual steps
       ACTIONS_STEP_DEBUG: true
 
     # Define matrix for environment-specific deployments
