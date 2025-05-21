@@ -41,23 +41,14 @@ jobs:
     if: github.event_name == 'push' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'TAR-')) || (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
     environment: dev
     env:
-      # AWS region for deployment (e.g., ap-southeast-2)
       AWS_REGION: ${{ vars.AWS_REGION }}
-      # CloudFormation stack name
       STACK_NAME: ${{ vars.STACK_NAME }}
-      # Base table name (appended with environment, e.g., OrgReferencePolicies-dev)
       TABLE_NAME: ${{ vars.TABLE_NAME }}
-      # AWS Organization ID for access control
       ORGANIZATION_ID: ${{ vars.ORGANIZATION_ID }}
-      # IAM role name for Lambda access
       LAMBDA_ROLE_NAME: ${{ vars.LAMBDA_ROLE_NAME }}
-      # Path to the CloudFormation template (e.g., cloudformation/dynamodb-cfn-template.yml)
+      # Path to the CloudFormation template (e.g., cloudformation/prp-ddb.yml)
       CFN_TEMPLATE_PATH: ${{ vars.CFN_TEMPLATE_PATH }}
-      # Bypass proxy for AWS API calls in the specified region (optional, for proxy environments)
-      NO_PROXY: ${{ vars.AWS_REGION }}.amazonaws.com
-      # Enable debug logging for GitHub Actions runner
       ACTIONS_RUNNER_DEBUG: true
-      # Enable debug logging for individual steps
       ACTIONS_STEP_DEBUG: true
 
     steps:
