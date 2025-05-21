@@ -9,3 +9,7 @@ LAMBDA_ROLE_NAME: e.g., GuardrailPolicyUpdateRole
 
 
 An error occurred (ValidationException) when calling the PutItem operation: One or more parameter values were invalid: Type mismatch for key version expected: N actual: S
+
+
+
+You have an error in your yaml syntax on line 54
