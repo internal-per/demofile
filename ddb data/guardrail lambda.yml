@@ -9,7 +9,7 @@ Parameters:
     Description: Name of the DynamoDB table to store policies.
   BucketName:
     Type: String
-    Default: grd-pol-123456789012
+    Default: guardrail-policy-deploy-temp
     Description: Name of the S3 bucket to store policy files (must be 3-63 characters).
 
 # Resources define the AWS components to be created
@@ -19,10 +19,10 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: GuardrailPolicyUpdate
-      Handler: index.handler # Entry point for Lambda execution
-      Runtime: python3.11 # Python runtime version
-      Timeout: 300 # Maximum execution time in seconds
-      Role: !GetAtt LambdaExecutionRole.Arn # IAM role for Lambda permissions
+      Handler: index.handler 
+      Runtime: python3.11 
+      Timeout: 300 
+      Role: !GetAtt LambdaExecutionRole.Arn 
       Code:
         ZipFile: |
           import json  # For JSON serialization/deserialization
