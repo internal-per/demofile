@@ -2,20 +2,19 @@
 name: Deploy Centralised PRP DDB for TARV2
 
 on:
+  # Trigger on push to dev or TAR-* branches for dev environment
   push:
     branches:
       - dev
-      - nonprod
-      - staging
-      - prod
       - 'TAR-*'
+  # Trigger on PR merge for nonprod, staging, and prod
   pull_request:
+    types: [closed]
     branches:
-      - dev
       - nonprod
       - staging
       - prod
-      - 'TAR-*'
+  # Allow manual trigger with environment input
   workflow_dispatch:
     inputs:
       environment:
@@ -34,88 +33,41 @@ permissions:
   contents: write   # Required for checking out the repository
 
 jobs:
-  build-test-deploy:
-    # Use the default runner (typically resolves to the latest Ubuntu runner)
+  deploy:
     runs-on: default
-    # Dynamically set the GitHub environment based on input or branch
-    environment: ${{ inputs.environment || github.ref_name }}
-
-    env:
-      # AWS region for deployment (e.g., ap-southeast-2)
-      AWS_REGION: ${{ vars.AWS_REGION }}
-      # CloudFormation stack name
-      STACK_NAME: ${{ vars.STACK_NAME }}
-      # Base table name (appended with environment, e.g., OrgReferencePolicies-dev)
-      TABLE_NAME: ${{ vars.TABLE_NAME }}
-      # AWS Organization ID for access control
-      ORGANIZATION_ID: ${{ vars.ORGANIZATION_ID }}
-      # IAM role name for Lambda access
-      LAMBDA_ROLE_NAME: ${{ vars.LAMBDA_ROLE_NAME }}
-      # Bypass proxy for AWS API calls in the specified region (optional, for proxy environments)
-      NO_PROXY: ${{ vars.AWS_REGION }}.amazonaws.com
-      # Enable debug logging for GitHub Actions runner
-      ACTIONS_RUNNER_DEBUG: true
-      # Enable debug logging for individual steps
-      ACTIONS_STEP_DEBUG: true
-
-    # Define matrix for environment-specific deployments
     strategy:
       matrix:
-        environment:
-          - dev
-          - nonprod
-          - staging
-          - prod
+        environment: [dev, nonprod, staging, prod]
         include:
           - environment: dev
-            account: dev
+            previous: null
           - environment: nonprod
-            account: nonprod
+            previous: dev
           - environment: staging
-            account: staging
+            previous: nonprod
           - environment: prod
-            account: prod
-      fail-fast: false
-
+            previous: staging
+    if: |
+      (github.event_name == 'push' && matrix.environment == 'dev' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'TAR-'))) ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == matrix.environment && github.event.pull_request.head.ref == matrix.previous) ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == matrix.environment)
+    needs: ${{ matrix.previous != null ? format('deploy-{0}', matrix.previous) : null }}
+    environment: ${{ matrix.environment }}
     steps:
-      # Check out the repository code
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Set up Python environment for AWS CLI
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ inputs.python_version || '3.11' }}
 
-      # Install AWS CLI and dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install awscli
         shell: bash
 
-      # Validate that the branch matches the intended environment
-      - name: Validate Branch to Environment Mapping
-        run: |
-          if [[ "${{ github.ref_name }}" == "dev" || "${{ github.ref_name }}" =~ ^TAR- ]] && [[ "${{ matrix.environment }}" != "dev" ]]; then
-            echo "Error: dev and TAR-* branches can only deploy to dev environment"
-            exit 1
-          fi
-          if [[ "${{ github.ref_name }}" == "nonprod" ]] && [[ "${{ matrix.environment }}" != "nonprod" ]]; then
-            echo "Error: nonprod branch can only deploy to nonprod environment"
-            exit 1
-          fi
-          if [[ "${{ github.ref_name }}" == "staging" ]] && [[ "${{ matrix.environment }}" != "staging" ]]; then
-            echo "Error: staging branch can only deploy to staging environment"
-            exit 1
-          fi
-          if [[ "${{ github.ref_name }}" == "prod" ]] && [[ "${{ matrix.environment }}" != "prod" ]]; then
-            echo "Error: prod branch can only deploy to prod environment"
-            exit 1
-          fi
-
-      # Configure AWS credentials using OIDC
       - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -123,7 +75,6 @@ jobs:
           role-session-name: githubsession
           aws-region: ${{ vars.AWS_REGION }}
 
-      # Assume the CI/CD role for deployment
       - name: Configure AWS credentials (AssumeRole)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -132,25 +83,22 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           role-chaining: true
 
-      # Verify AWS identity for debugging
       - name: Verify AWS Caller Identity
         run: aws sts get-caller-identity
 
-      # Validate the CloudFormation template
       - name: Validate CloudFormation Template
         run: |
-          echo "Validating template: dynamodb-cfn-template.yml"
+          echo "Validating template: ${{ vars.CFN_TEMPLATE_PATH }}"
           aws cloudformation validate-template \
-            --template-body file://cloudformation/dynamodb-cfn-template.yml \
+            --template-body file://${{ vars.CFN_TEMPLATE_PATH }} \
             --region ${{ vars.AWS_REGION }}
 
-      # Deploy the CloudFormation stack
       - name: Deploy CloudFormation Stack
         run: |
           echo "Deploying stack for environment: ${{ matrix.environment }}"
           set +e
           aws cloudformation deploy \
-            --template-file cloudformation/dynamodb-cfn-template.yml \
+            --template-file ${{ vars.CFN_TEMPLATE_PATH }} \
             --stack-name ${{ vars.STACK_NAME }} \
             --parameter-overrides \
               Environment=${{ matrix.environment }} \
@@ -185,7 +133,6 @@ jobs:
             fi
           fi
 
-      # Populate the DynamoDB table with initial data (only for dev and nonprod)
       - name: Populate DynamoDB with Initial Data
         if: matrix.environment == 'dev' || matrix.environment == 'nonprod'
         run: |
@@ -194,8 +141,8 @@ jobs:
             --table-name ${{ vars.TABLE_NAME }}-${{ matrix.environment }} \
             --item '{
                 "services": {"S": "sample"},
-                "version": {"S": "v1"},
-                "approved_policy_actions": {
+                "version": {"N": "1"},
+                "PolicyJSON": {
                   "S": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"test:sampledata\"],\"Resource\":\"*\",\"Effect\":\"Allow\"}]}"
                 }
               }' \
