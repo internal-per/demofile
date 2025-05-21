@@ -1,63 +1,83 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Deploys the prp-db-org-policy DynamoDB table for TARV2 centralized policy storage.
+Description: Deploys the OrgReferencePolicies DynamoDB table for TARV2 centralized policy storage.
 
-# Parameters define configurable inputs for the template
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment Configuration
+        Parameters:
+          - Environment
+      - Label:
+          default: Table Configuration
+        Parameters:
+          - TableName
+
 Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, staging, nonprod, prod]
+    Description: The deployment environment
   TableName:
     Type: String
-    Default: prp-db-org-policy
-    Description: Name of the DynamoDB table to store policies.
-  OrganizationId:
-    Type: String
-    Description: AWS Organization ID (e.g., o-xxxxxxxxxxxx) to restrict cross-account read access to organization principals.
+    Default: OrgReferencePolicies
+    Description: Base name of the DynamoDB table to store policies
 
-# Resources define the AWS components to be created
+Conditions:
+  IsProd: !Equals [ !Ref Environment, prod ]
+
 Resources:
-  # DynamoDB table to store organization policies
   OrgPolicyTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Ref TableName # Name of the table, defaults to prp-db-org-policy
+      TableName: !Sub "${TableName}-${Environment}"
       AttributeDefinitions:
         - AttributeName: services
-          AttributeType: S # String type for the services partition key
+          AttributeType: S
+        - AttributeName: version
+          AttributeType: N
       KeySchema:
         - AttributeName: services
-          KeyType: HASH # Partition key for services (e.g., s3, acm)
+          KeyType: HASH
+        - AttributeName: version
+          KeyType: RANGE
+      BillingMode: PROVISIONED
       ProvisionedThroughput:
-        ReadCapacityUnits: 5 # Read capacity for provisioned throughput
-        WriteCapacityUnits: 5 # Write capacity for provisioned throughput
-      BillingMode: PROVISIONED # Use provisioned billing mode
-      # Resource-based policy for Lambda access
+        ReadCapacityUnits: !If [IsProd, 10, 5]
+        WriteCapacityUnits: !If [IsProd, 10, 5]
       ResourcePolicy:
         PolicyDocument:
           Version: '2012-10-17'
           Statement:
-            # Policy for GuardrailPolicyUpdate Lambda in the deploying account
             - Effect: Allow
               Principal:
-                AWS: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:GuardrailPolicyUpdate # Lambda ARN in this account
+                AWS: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:GuardrailPolicyUpdate
               Action:
-                - dynamodb:GetItem # Allow read access to table items
-                - dynamodb:UpdateItem # Allow updates to table items
-                - dynamodb:DescribeTable # Allow table metadata access
-              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName} # Table ARN constructed manually
-            # Policy for cross-account principals (e.g., pdp-lambda) in the organization
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+                - dynamodb:DescribeTable
+              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}
             - Effect: Allow
               Principal:
-                AWS: '*' # Allow all AWS principals in the organization
+                AWS: '*'
               Action:
-                - dynamodb:GetItem # Allow read access to table items
-              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName} # Table ARN constructed manually
+                - dynamodb:GetItem
+              Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}-${Environment}
               Condition:
                 StringEquals:
-                  aws:PrincipalOrgID: !Ref OrganizationId # Restrict to organization accounts
+                  aws:PrincipalOrgID:
+                    - o-456345
+                    - o-erf5343
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: OrganizationIds
+          Value: o-456345,o-erf5343
 
-# Outputs provide information about created resources
 Outputs:
   TableArn:
-    Description: ARN of the prp-db-org-policy DynamoDB table
+    Description: ARN of the OrgReferencePolicies DynamoDB table
     Value: !GetAtt OrgPolicyTable.Arn
   TableName:
-    Description: Name of the prp-db-org-policy DynamoDB table
-    Value: !Ref TableName
+    Description: Name of the OrgReferencePolicies DynamoDB table
+    Value: !Ref OrgPolicyTable
