@@ -39,7 +39,7 @@ Resources:
                   raise
           def extract_service_from_actions(policy_data):
               logger.info("Extracting service from policy actions")
-              statements = policy_data.get('Statement', [])
+ potions              statements = policy_data.get('Statement', [])
               if not statements:
                   logger.error("Policy has no 'Statement' field")
                   raise ValueError("Policy has no 'Statement' field.")
