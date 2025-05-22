@@ -1,46 +1,33 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Deploys a Lambda function and S3 bucket to update prp-db-org-policy DynamoDB table with policies from aws-guardrail-policy-security repo.
-
-# Parameters define configurable inputs for the template
+Description: Deploys a Lambda function and S3 bucket to update DynamoDB table with policies from aws-guardrail-policy-security repo.
 Parameters:
   TableName:
     Type: String
-    Default: prp-db-org-policy
     Description: Name of the DynamoDB table to store policies.
   BucketName:
     Type: String
-    Default: guardrail-policy-deploy-temp
     Description: Name of the S3 bucket to store policy files (must be 3-63 characters).
-
-# Resources define the AWS components to be created
 Resources:
-  # Lambda function to update DynamoDB with policies from S3
   PolicyUpdateLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: GuardrailPolicyUpdate
-      Handler: index.handler 
-      Runtime: python3.11 
-      Timeout: 300 
-      Role: !GetAtt LambdaExecutionRole.Arn 
+      Handler: index.handler
+      Runtime: python3.11
+      Timeout: 300
+      Role: !GetAtt LambdaExecutionRole.Arn
       Code:
         ZipFile: |
-          import json  # For JSON serialization/deserialization
-          import boto3  # AWS SDK for interacting with AWS services
-          from botocore.exceptions import ClientError  # For AWS error handling
-          import logging  # For logging Lambda execution details
-          import os  # For accessing environment variables
-
-          # Configure logging
+          import json
+          import boto3
+          from botocore.exceptions import ClientError
+          import logging
+          import os
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
-
-          # Initialize AWS clients
-          dynamodb = boto3.resource('dynamodb')  # DynamoDB resource client
-          s3 = boto3.client('s3')  # S3 client
-
+          dynamodb = boto3.resource('dynamodb')
+          s3 = boto3.client('s3')
           def check_dynamodb_table_exists(table_name):
-              """Verify if the specified DynamoDB table exists."""
               logger.info(f"Checking if DynamoDB table '{table_name}' exists")
               try:
                   dynamodb.meta.client.describe_table(TableName=table_name)
@@ -50,9 +37,7 @@ Resources:
                   if e.response['Error']['Code'] == 'ResourceNotFoundException':
                       raise ValueError(f"DynamoDB table '{table_name}' does not exist in the account.")
                   raise
-
           def extract_service_from_actions(policy_data):
-              """Extract the AWS service name from policy actions."""
               logger.info("Extracting service from policy actions")
               statements = policy_data.get('Statement', [])
               if not statements:
@@ -61,32 +46,25 @@ Resources:
               for statement in statements:
                   actions = statement.get('Action', [])
                   if isinstance(actions, str):
-                      actions = [actions]  # Convert single action string to list
+                      actions = [actions]
                   elif not isinstance(actions, list):
-                      continue  # Skip invalid action types
+                      continue
                   for action in actions:
                       if ':' in action and action != '*':
-                          service = action.split(':')[0].lower()  # Extract service prefix
+                          service = action.split(':')[0].lower()
                           if service:
                               logger.info(f"Extracted service: {service}")
                               return service
               logger.error("No valid service name found in policy actions")
               raise ValueError("No valid service name found in policy actions.")
-
           def handler(event, context):
-              """Main Lambda handler function."""
               logger.info(f"Received event: {json.dumps(event)}")
               try:
-                  # Retrieve table and bucket names from environment variables
                   table_name = os.environ['TABLE_NAME']
                   bucket_name = os.environ['BUCKET_NAME']
                   logger.info(f"Processing table: {table_name}, bucket: {bucket_name}")
-                  
-                  # Verify table existence
                   check_dynamodb_table_exists(table_name)
-                  table = dynamodb.Table(table_name)  # Initialize table object
-
-                  # List policy files in S3 bucket
+                  table = dynamodb.Table(table_name)
                   logger.info(f"Listing objects in s3://{bucket_name}/policies/")
                   response = s3.list_objects_v2(Bucket=bucket_name, Prefix='policies/')
                   if 'Contents' not in response:
@@ -95,53 +73,35 @@ Resources:
                           'statusCode': 200,
                           'body': f'No policy files found in s3://{bucket_name}/policies/.'
                       }
-
-                  # Process each S3 object
                   for obj in response['Contents']:
                       key = obj['Key']
                       logger.info(f"Processing object: {key}")
                       if not key.endswith('.json'):
                           logger.info(f"Skipping non-JSON file: {key}")
                           continue
-                      
-                      # Read and parse policy file
                       logger.info(f"Reading S3 object: {key}")
                       policy_obj = s3.get_object(Bucket=bucket_name, Key=key)
                       policy_data = json.loads(policy_obj['Body'].read().decode('utf-8'))
                       logger.info(f"Policy data: {json.dumps(policy_data)}")
-                      
-                      # Extract service name from policy actions
                       service_name = extract_service_from_actions(policy_data)
                       logger.info(f"Updating DynamoDB for service: {service_name}")
                       try:
-                          # Get current item to determine version and existing policy
                           response = table.get_item(Key={'services': service_name})
                           item = response.get('Item', {})
-                          current_version = item.get('version', 'v0')
-                          current_policy = item.get('approved_policy_actions', '')
-                          
-                          # Serialize new policy to JSON string
+                          current_version = item.get('version', 0)
+                          current_policy = item.get('PolicyJSON', '')
                           policy_json = json.dumps({
                               'Version': policy_data['Version'],
                               'Statement': policy_data['Statement']
                           }, sort_keys=True)
-                          
-                          # Normalize current policy for comparison
                           normalized_current = json.dumps(json.loads(current_policy), sort_keys=True) if current_policy else ''
-                          
-                          # Compare new policy with current policy for this service
                           if policy_json == normalized_current:
                               logger.info(f"No changes in policy for {service_name}, skipping update")
                               continue
-                          
-                          # Increment version for update only for this service
-                          version_num = int(current_version.replace('v', '')) + 1 if current_version.startswith('v') else 1
-                          new_version = f'v{version_num}'
-                          
-                          # Update DynamoDB item with new version and policy for this service
+                          new_version = current_version + 1
                           table.update_item(
                               Key={'services': service_name},
-                              UpdateExpression='SET version = :v, approved_policy_actions = :p',
+                              UpdateExpression='SET version = :v, PolicyJSON = :p',
                               ExpressionAttributeValues={
                                   ':v': new_version,
                                   ':p': policy_json
@@ -151,7 +111,6 @@ Resources:
                       except ClientError as e:
                           logger.error(f"Error updating DynamoDB for {service_name}: {str(e)}")
                           raise
-                  
                   logger.info("Policy update completed")
                   return {
                       'statusCode': 200,
@@ -160,18 +119,14 @@ Resources:
               except Exception as e:
                   logger.error(f"Error updating policies: {str(e)}")
                   raise
-      # Define Lambda environment variables
       Environment:
         Variables:
           TABLE_NAME: !Ref TableName
           BUCKET_NAME: !Ref BucketName
-
-  # IAM role for Lambda execution
   LambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: GuardrailPolicyUpdateRole
-      # Allow Lambda service to assume this role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -179,20 +134,17 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
-      # Define permissions for DynamoDB, S3, and CloudWatch Logs
       Policies:
         - PolicyName: LambdaDynamoDBAccess
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              # Permissions for DynamoDB operations
               - Effect: Allow
                 Action:
                   - dynamodb:GetItem
                   - dynamodb:UpdateItem
                   - dynamodb:DescribeTable
                 Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}
-              # Permissions for S3 operations
               - Effect: Allow
                 Action:
                   - s3:GetObject
@@ -200,25 +152,19 @@ Resources:
                 Resource:
                   - !Sub arn:aws:s3:::${BucketName}
                   - !Sub arn:aws:s3:::${BucketName}/*
-              # Permissions for CloudWatch Logs
               - Effect: Allow
                 Action:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/GuardrailPolicyUpdate:*
-
-  # S3 bucket to store policy files
   PolicyBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain # Prevent deletion on stack deletion
+    DeletionPolicy: Retain
     Properties:
       BucketName: !Ref BucketName
-      # Enable versioning for policy files
       VersioningConfiguration:
         Status: Enabled
-
-# Outputs provide information about created resources
 Outputs:
   LambdaArn:
     Description: ARN of the policy update Lambda function
