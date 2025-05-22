@@ -16,10 +16,6 @@ on:
         description: Environment (dev, nonprod, main, prod)
         required: true
         type: string
-      python_version:
-        description: Python version
-        required: true
-        type: string
       aws_region:
         description: AWS region
         required: true
@@ -67,6 +63,13 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+      - name: Validate Variables
+        run: |
+          if [ -z "${{ vars.STACK_NAME_BASE }}" ]; then
+            echo "Error: vars.STACK_NAME_BASE is not set"
+            exit 1
+          fi
+          echo "STACK_NAME_BASE: ${{ vars.STACK_NAME_BASE }}"
       - name: Validate Environment
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -102,7 +105,6 @@ jobs:
           table-name: ${{ vars.TABLE_NAME_BASE }}-${{ github.event.inputs.environment }}
           lambda-function-name: ${{ vars.LAMBDA_FUNCTION_NAME_BASE }}-${{ github.event.inputs.environment }}
           environment: ${{ github.event.inputs.environment }}
-          python-version: ${{ vars.PYTHON_VERSION }}
           gha-trust-role: ${{ vars.GHA_TRUST_ROLE }}
           gha-cicd-role: ${{ vars.GHA_CICD_ROLE }}
           bucket-name-base: ${{ vars.BUCKET_NAME_BASE }}
@@ -130,6 +132,6 @@ jobs:
               -H "Authorization: Bearer ${{ github.token }}" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy-guardrail.yml/dispatches" \
-              -d "{\"ref\":\"$NEXT_REF\",\"inputs\":{\"environment\":\"$NEXT_ENV\",\"python_version\":\"${{ vars.PYTHON_VERSION }}\",\"aws_region\":\"${{ vars.AWS_REGION }}\",\"bucket_name_base\":\"${{ vars.BUCKET_NAME_BASE }}\",\"stack_name_base\":\"${{ vars.STACK_NAME_BASE }}\",\"table_name_base\":\"${{ vars.TABLE_NAME_BASE }}\",\"lambda_function_name_base\":\"${{ vars.LAMBDA_FUNCTION_NAME_BASE }}\",\"template_file\":\"${{ vars.TEMPLATE_FILE }}\",\"gha_trust_role\":\"${{ vars.GHA_TRUST_ROLE }}\",\"gha_cicd_role\":\"${{ vars.GHA_CICD_ROLE }}\",\"deploy_lambda\":\"${{ github.event.inputs.deploy_lambda }}\"}}"
+              -d "{\"ref\":\"$NEXT_REF\",\"inputs\":{\"environment\":\"$NEXT_ENV\",\"aws_region\":\"${{ vars.AWS_REGION }}\",\"bucket_name_base\":\"${{ vars.BUCKET_NAME_BASE }}\",\"stack_name_base\":\"${{ vars.STACK_NAME_BASE }}\",\"table_name_base\":\"${{ vars.TABLE_NAME_BASE }}\",\"lambda_function_name_base\":\"${{ vars.LAMBDA_FUNCTION_NAME_BASE }}\",\"template_file\":\"${{ vars.TEMPLATE_FILE }}\",\"gha_trust_role\":\"${{ vars.GHA_TRUST_ROLE }}\",\"gha_cicd_role\":\"${{ vars.GHA_CICD_ROLE }}\",\"deploy_lambda\":\"${{ github.event.inputs.deploy_lambda }}\"}}"
           fi
       shell: bash
