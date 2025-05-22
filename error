@@ -20,14 +20,6 @@ TEMPLATE_FILE: guardrail-lambda.yml
 
 
 
-Run aws cloudformation deploy \
-usage: 
-Note: AWS CLI version 2, the latest major version of the AWS CLI, is now stable and recommended for general use. For more information, see the AWS CLI version 2 installation instructions at: https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html
-
-usage: aws [options] <command> <subcommand> [<subcommand> ...] [parameters]
-To see help text, you can run:
-
-  aws help
-  aws <command> help
-  aws <command> <subcommand> help
-aws: error: argument --stack-name: expected one argument
+Run if [ -z "" ]; then
+Error: vars.STACK_NAME_BASE is not set
+Error: Process completed with exit code 1
