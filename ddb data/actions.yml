@@ -41,7 +41,7 @@ runs:
   using: composite
   steps:
     - name: Setup Environment
-      uses: ../deploy
+      uses: ./.github/actions/deploy
       with:
         gha-trust-role: ${{ inputs.gha-trust-role }}
         gha-cicd-role: ${{ inputs.gha-cicd-role }}
