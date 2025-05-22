@@ -69,25 +69,30 @@ jobs:
             echo "Error: vars.STACK_NAME_BASE is not set"
             exit 1
           fi
+          if [ -z "${{ vars.TEMPLATE_FILE }}" ]; then
+            echo "Error: vars.TEMPLATE_FILE is not set"
+            exit 1
+          fi
           echo "STACK_NAME_BASE: ${{ vars.STACK_NAME_BASE }}"
+          echo "TEMPLATE_FILE: ${{ vars.TEMPLATE_FILE }}"
       - name: Validate Environment
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ "${{ inputs.environment }}" != "dev" && "${{ inputs.environment }}" != "nonprod" && "${{ inputs.environment }}" != "main" && "${{ inputs.environment }}" != "prod" ]]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.environment }}" != "dev" ] && [ "${{ inputs.environment }}" != "nonprod" ] && [ "${{ inputs.environment }}" != "main" ] && [ "${{ inputs.environment }}" != "prod" ]; then
               echo "Invalid environment: ${{ inputs.environment }}"
               exit 1
             fi
             echo "Running for ${{ inputs.environment }} (workflow_dispatch)"
             exit 0
           fi
-          if [[ "${{ github.event_name }}" == "push" && ("${{ github.ref_name }}" == "dev" || "${{ github.ref_name }}" =~ ^ttrs-.*) && "${{ inputs.environment }}" == "dev" ]]; then
+          if [ "${{ github.event_name }}" = "push" ] && { [ "${{ github.ref_name }}" = "dev" ] || [[ "${{ github.ref_name }}" =~ ^ttrs-.* ]]; } && [ "${{ inputs.environment }}" = "dev" ]; then
             echo "Running for dev (push)"
-          elif [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.pull_request.merged }}" == "true" ]]; then
-            if [[ "${{ github.event.pull_request.base.ref }}" == "nonprod" && "${{ github.event.pull_request.head.ref }}" == "dev" && "${{ inputs.environment }}" == "nonprod" ]]; then
+          elif [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+            if [ "${{ github.event.pull_request.base.ref }}" = "nonprod" ] && [ "${{ github.event.pull_request.head.ref }}" = "dev" ] && [ "${{ inputs.environment }}" = "nonprod" ]; then
               echo "Running for nonprod (PR merge)"
-            elif [[ "${{ github.event.pull_request.base.ref }}" == "main" && "${{ github.event.pull_request.head.ref }}" == "nonprod" && "${{ inputs.environment }}" == "main" ]]; then
+            elif [ "${{ github.event.pull_request.base.ref }}" = "main" ] && [ "${{ github.event.pull_request.head.ref }}" = "nonprod" ] && [ "${{ inputs.environment }}" = "main" ]; then
               echo "Running for main (PR merge)"
-            elif [[ "${{ github.event.pull_request.base.ref }}" == "prod" && "${{ github.event.pull_request.head.ref }}" == "main" && "${{ inputs.environment }}" == "prod" ]]; then
+            elif [ "${{ github.event.pull_request.base.ref }}" = "prod" ] && [ "${{ github.event.pull_request.head.ref }}" = "main" ] && [ "${{ inputs.environment }}" = "prod" ]; then
               echo "Running for prod (PR merge)"
             else
               echo "Skipping: Invalid PR merge for ${{ inputs.environment }}"
@@ -134,4 +139,4 @@ jobs:
               "https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy-guardrail.yml/dispatches" \
               -d "{\"ref\":\"$NEXT_REF\",\"inputs\":{\"environment\":\"$NEXT_ENV\",\"aws_region\":\"${{ vars.AWS_REGION }}\",\"bucket_name_base\":\"${{ vars.BUCKET_NAME_BASE }}\",\"stack_name_base\":\"${{ vars.STACK_NAME_BASE }}\",\"table_name_base\":\"${{ vars.TABLE_NAME_BASE }}\",\"lambda_function_name_base\":\"${{ vars.LAMBDA_FUNCTION_NAME_BASE }}\",\"template_file\":\"${{ vars.TEMPLATE_FILE }}\",\"gha_trust_role\":\"${{ vars.GHA_TRUST_ROLE }}\",\"gha_cicd_role\":\"${{ vars.GHA_CICD_ROLE }}\",\"deploy_lambda\":\"${{ github.event.inputs.deploy_lambda }}\"}}"
           fi
-      shell: bash
+        shell: bash

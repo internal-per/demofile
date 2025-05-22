@@ -1,0 +1,44 @@
+name: Common Setup for Guardrail Workflows
+description: Sets up Python and AWS credentials for Guardrail workflows
+inputs:
+  python-version:
+    description: Python version for the runner
+    required: true
+  gha_trust_role:
+    description: IAM role for OIDC authentication
+    required: true
+  gha_cicd_role:
+    description: IAM role for CI/CD operations
+    required: true
+  aws_region:
+    description: AWS region for deployment
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -i https://artifactory.internal.cba/api/pypi/org.python.pypi/simple/ --upgrade awscli
+      shell: bash
+    - name: Configure AWS credentials (AssumeRoleWithWebIdentity)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.gha_trust_role }}
+        role-session-name: GitHubActions
+        aws-region: ${{ inputs.aws_region }}
+    - name: Configure AWS credentials (AssumeRole)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.gha_cicd_role }}
+        role-session-name: GitHubActions
+        aws-region: ${{ inputs.aws_region }}
+        role-chaining: true
