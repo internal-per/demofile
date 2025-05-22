@@ -44,16 +44,17 @@ jobs:
   DeployPolicies:
     runs-on: default
     strategy:
+      fail-fast: false
       matrix:
-        environment: [dev, nonprod, main, prod]
+        environments: [dev, nonprod, main, prod]
       max-parallel: 1
-    environment: ${{ matrix.environment }}
+    environment: ${{ matrix.environments }}
     if: |
-      (matrix.environment == 'dev' && github.event_name == 'push' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'ttrs-'))) ||
-      (matrix.environment == 'nonprod' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'nonprod' && github.event.pull_request.head.ref == 'dev') ||
-      (matrix.environment == 'main' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.ref == 'nonprod') ||
-      (matrix.environment == 'prod' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'prod' && github.event.pull_request.head.ref == 'main') ||
-      (github.event_name == 'workflow_dispatch' && inputs.environment == matrix.environment)
+      (matrix.environments == 'dev' && github.event_name == 'push' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'ttrs-'))) ||
+      (matrix.environments == 'nonprod' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'nonprod' && github.event.pull_request.head.ref == 'dev') ||
+      (matrix.environments == 'main' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.ref == 'nonprod') ||
+      (matrix.environments == 'prod' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'prod' && github.event.pull_request.head.ref == 'main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == matrix.environments)
     steps:
       - name: Setup Environment
         uses: ./.github/actions/deploy
