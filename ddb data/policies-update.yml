@@ -4,8 +4,6 @@ on:
     branches:
       - dev
       - 'ttrs-*'
-    paths:
-      - 'policies/**'
   pull_request:
     types: [closed]
     branches:
@@ -54,7 +52,7 @@ jobs:
           elif [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.merged }}" = "true" ]; then
             if [ "${{ github.event.pull_request.base.ref }}" = "nonprod" ] && [ "${{ github.event.pull_request.head.ref }}" = "dev" ]; then
               ENV="nonprod"
-            elif [ "${{ github.event_pull_request.base.ref }}" = "main" ] && [ "${{ github.event.pull_request.head.ref }}" = "nonprod" ]; then
+            elif [ "${{ github.event.pull_request.base.ref }}" = "main" ] && [ "${{ github.event.pull_request.head.ref }}" = "nonprod" ]; then
               ENV="main"
             elif [ "${{ github.event.pull_request.base.ref }}" = "prod" ] && [ "${{ github.event.pull_request.head.ref }}" = "main" ]; then
               ENV="prod"
