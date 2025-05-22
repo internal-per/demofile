@@ -20,8 +20,9 @@ TEMPLATE_FILE: guardrail-lambda.yml
 
 
 
-Invalid workflow file: .github/workflows/gitactions-policy.yml#L52
-The workflow is not valid. .github/workflows/gitactions-policy.yml (Line: 52, Col: 9): Unrecognized named-value: 'matrix'. Located at position 2 within expression: (matrix.environments == 'dev' && github.event_name == 'push' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'ttrs-'))) ||
-(matrix.environments == 'nonprod' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'nonprod' && github.event.pull_request.head.ref == 'dev') ||
-(matrix.e[...]
 
+Can't find 'action.yml', 'action.yaml' or 'Dockerfile' under '/home/runner/_work/aws-guardrail-policy-security/aws-guardrail-policy-security/.github/actions/deploy'. Did you forget to run actions/checkout before running your local action?
+
+Pass all values as with: inputs from the workflow.
+Reference them as ${{ inputs.* }} in your composite actions.
+Do not use vars.* or env.* inside composite actions.
