@@ -28,7 +28,7 @@ env:
   STACK_NAME_BASE: guardrail-lambda-stack
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: default
     environment: ${{ github.event.inputs.environment || vars.ENVIRONMENT }}
     steps:
       - name: Checkout Repository
@@ -42,6 +42,7 @@ jobs:
           echo "PR Head Ref: ${{ github.event.pull_request.head.ref }}"
           echo "Selected Environment: ${{ github.event.inputs.environment || vars.ENVIRONMENT }}"
           echo "STACK_NAME_BASE: ${{ env.STACK_NAME_BASE }}"
+          echo "AWS_REGION: ${{ vars.AWS_REGION }}"
           echo "Full Stack Name: ${{ env.STACK_NAME_BASE }}-${{ github.event.inputs.environment || vars.ENVIRONMENT }}"
           echo "All Variables:"
           env | grep -E 'STACK_NAME_BASE|TEMPLATE_FILE|AWS_REGION|BUCKET_NAME_BASE|TABLE_NAME_BASE|LAMBDA_FUNCTION_NAME_BASE|GHA_|ENVIRONMENT' || echo "No matching variables"
