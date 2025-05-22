@@ -20,9 +20,14 @@ TEMPLATE_FILE: guardrail-lambda.yml
 
 
 
+Run aws cloudformation deploy \
+usage: 
+Note: AWS CLI version 2, the latest major version of the AWS CLI, is now stable and recommended for general use. For more information, see the AWS CLI version 2 installation instructions at: https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html
 
-Can't find 'action.yml', 'action.yaml' or 'Dockerfile' under '/home/runner/_work/aws-guardrail-policy-security/aws-guardrail-policy-security/.github/actions/deploy'. Did you forget to run actions/checkout before running your local action?
+usage: aws [options] <command> <subcommand> [<subcommand> ...] [parameters]
+To see help text, you can run:
 
-Pass all values as with: inputs from the workflow.
-Reference them as ${{ inputs.* }} in your composite actions.
-Do not use vars.* or env.* inside composite actions.
+  aws help
+  aws <command> help
+  aws <command> <subcommand> help
+aws: error: argument --stack-name: expected one argument
