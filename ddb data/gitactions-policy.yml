@@ -24,16 +24,20 @@ on:
         description: AWS region
         required: true
         type: string
-      bucket_name:
-        description: S3 bucket name
+      bucket_name_base:
+        description: Base name for S3 bucket
         required: true
         type: string
-      table_name:
-        description: DynamoDB table name
+      table_name_base:
+        description: Base name for DynamoDB table
         required: true
         type: string
-      lambda_function_name:
-        description: Lambda function name
+      lambda_function_name_base:
+        description: Base name for Lambda function
+        required: true
+        type: string
+      stack_name_base:
+        description: Base name for CloudFormation stack
         required: true
         type: string
 permissions:
@@ -49,13 +53,25 @@ jobs:
         environments: [dev, nonprod, main, prod]
       max-parallel: 1
     environment: ${{ matrix.environments }}
-    if: |
-      (matrix.environments == 'dev' && github.event_name == 'push' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'ttrs-'))) ||
-      (matrix.environments == 'nonprod' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'nonprod' && github.event.pull_request.head.ref == 'dev') ||
-      (matrix.environments == 'main' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.ref == 'nonprod') ||
-      (matrix.environments == 'prod' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'prod' && github.event.pull_request.head.ref == 'main') ||
-      (github.event_name == 'workflow_dispatch' && inputs.environment == matrix.environments)
     steps:
+      - name: Validate Environment
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.environment }}" != "${{ matrix.environments }}" ]]; then
+            echo "Skipping environment ${{ matrix.environments }} for workflow_dispatch with input ${{ inputs.environment }}"
+            exit 0
+          fi
+          if [[ "${{ matrix.environments }}" == "dev" && "${{ github.event_name }}" == "push" && ("${{ github.ref_name }}" == "dev" || "${{ github.ref_name }}" =~ ^ttrs-.*) ]]; then
+            echo "Running for dev"
+          elif [[ "${{ matrix.environments }}" == "nonprod" && "${{ github.event_name }}" == "pull_request" && "${{ github.event.pull_request.merged }}" == "true" && "${{ github.event.pull_request.base.ref }}" == "nonprod" && "${{ github.event.pull_request.head.ref }}" == "dev" ]]; then
+            echo "Running for nonprod"
+          elif [[ "${{ matrix.environments }}" == "main" && "${{ github.event_name }}" == "pull_request" && "${{ github.event.pull_request.merged }}" == "true" && "${{ github.event.pull_request.base.ref }}" == "main" && "${{ github.event.pull_request.head.ref }}" == "nonprod" ]]; then
+            echo "Running for main"
+          elif [[ "${{ matrix.environments }}" == "prod" && "${{ github.event_name }}" == "pull_request" && "${{ github.event.pull_request.merged }}" == "true" && "${{ github.event.pull_request.base.ref }}" == "prod" && "${{ github.event.pull_request.head.ref }}" == "main" ]]; then
+            echo "Running for prod"
+          else
+            echo "Skipping environment ${{ matrix.environments }}"
+            exit 0
+          fi
       - name: Setup Environment
         uses: ./.github/actions/deploy
         with:
@@ -67,6 +83,6 @@ jobs:
         uses: ./.github/actions/update-policies
         with:
           aws-region: ${{ vars.AWS_REGION }}
-          bucket-name: ${{ vars.BUCKET_NAME }}
-          table-name: ${{ vars.TABLE_NAME }}
-          lambda-function-name: ${{ vars.LAMBDA_FUNCTION_NAME }}
+          bucket-name: ${{ vars.BUCKET_NAME_BASE }}-${{ matrix.environments }}
+          table-name: ${{ vars.TABLE_NAME_BASE }}-${{ matrix.environments }}
+          lambda-function-name: ${{ vars.LAMBDA_FUNCTION_NAME_BASE }}-${{ matrix.environments }}
