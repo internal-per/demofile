@@ -1,5 +1,5 @@
 name: Update Policies
-description: Deploys Lambda stack and syncs policies to S3, updates DynamoDB
+description: Deploys Lambda stack or syncs policies to S3 and updates DynamoDB
 inputs:
   aws-region:
     description: AWS region for deployment
@@ -35,7 +35,7 @@ inputs:
     description: CloudFormation template file
     required: true
   deploy-lambda:
-    description: Whether to deploy Lambda stack (true/false)
+    description: Whether to deploy Lambda stack (true) or policies (false)
     required: true
 runs:
   using: composite
@@ -51,8 +51,13 @@ runs:
         echo "Stack Name: ${{ inputs.stack-name-base }}-${{ inputs.environment }}"
         echo "Bucket: ${{ inputs.bucket-name }}"
         echo "Table: ${{ inputs.table-name }}"
+        echo "Template File: ${{ inputs.template-file }}"
         if [ -z "${{ inputs.stack-name-base }}" ]; then
           echo "Error: stack-name-base is empty"
+          exit 1
+        fi
+        if [ -z "${{ inputs.template-file }}" ]; then
+          echo "Error: template-file is empty"
           exit 1
         fi
       shell: bash
@@ -70,28 +75,6 @@ runs:
         else
           echo "bucket_exists=false" >> $GITHUB_OUTPUT
         fi
-      shell: bash
-    - name: Trigger Lambda Deployment Workflow
-      if: inputs.deploy-lambda == 'false' && steps.check-bucket.outputs.bucket_exists == 'false'
-      run: |
-        REF=$([ "${{ inputs.environment }}" = "dev" ] && echo "dev" || [ "${{ inputs.environment }}" = "nonprod" ] && echo "nonprod" || [ "${{ inputs.environment }}" = "main" ] && echo "main" || echo "prod")
-        curl -X POST -H "Accept: application/vnd.github+json" \
-          -H "Authorization: Bearer ${{ github.token }}" \
-          -H "X-GitHub-Api-Version: 2022-11-28" \
-          "https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy-guardrail.yml/dispatches" \
-          -d "{\"ref\":\"$REF\",\"inputs\":{\"environment\":\"${{ inputs.environment }}\",\"aws_region\":\"${{ inputs.aws-region }}\",\"bucket_name_base\":\"${{ inputs.bucket-name-base }}\",\"stack_name_base\":\"${{ inputs.stack-name-base }}\",\"table_name_base\":\"${{ inputs.table-name-base }}\",\"lambda_function_name_base\":\"${{ inputs.lambda-function-name }}\",\"template_file\":\"${{ inputs.template-file }}\",\"gha_trust_role\":\"${{ inputs.gha-trust-role }}\",\"gha_cicd_role\":\"${{ inputs.gha-cicd-role }}\",\"deploy_lambda\":\"true\"}}"
-      shell: bash
-    - name: Wait for Bucket Creation
-      if: inputs.deploy-lambda == 'false' && steps.check-bucket.outputs.bucket_exists == 'false'
-      run: |
-        for i in {1..30}; do
-          if aws s3api head-bucket --bucket "${{ inputs.bucket-name }}" --region "${{ inputs.aws-region }}" 2>/dev/null; then
-            exit 0
-          fi
-          sleep 10
-        done
-        echo "Error: Bucket ${{ inputs.bucket-name }} not created in time"
-        exit 1
       shell: bash
     - name: Validate Template
       if: inputs.deploy-lambda == 'true'
