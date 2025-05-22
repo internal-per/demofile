@@ -40,6 +40,14 @@ on:
         description: CloudFormation template file
         required: true
         type: string
+      gha_trust_role:
+        description: IAM role for OIDC authentication
+        required: true
+        type: string
+      gha_cicd_role:
+        description: IAM role for CI/CD operations
+        required: true
+        type: string
 permissions:
   id-token: write
   contents: write
@@ -53,6 +61,8 @@ jobs:
       max-parallel: 1
     environment: ${{ matrix.environments }}
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
       - name: Validate Environment
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.environment }}" != "${{ matrix.environments }}" ]]; then
@@ -71,8 +81,6 @@ jobs:
             echo "Skipping environment ${{ matrix.environments }}"
             exit 0
           fi
-      - name: Checkout Repository
-        uses: actions/checkout@v4
       - name: Setup Environment
         uses: ./.github/actions/deploy
         with:
