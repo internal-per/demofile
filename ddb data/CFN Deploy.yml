@@ -26,19 +26,25 @@ permissions:
   actions: write
 env:
   STACK_NAME_BASE: guardrail-lambda-stack
-  AWS_REGION: ap-southeast-2
-  BUCKET_NAME_BASE: guardrail-policy-deploy-temp
-  TABLE_NAME_BASE: prp-db-org-policy
-  LAMBDA_FUNCTION_NAME_BASE: GuardrailPolicyUpdate
-  TEMPLATE_FILE: guardrail-lambda.yml
-  GHA_TRUST_ROLE: arn:aws:iam::123456789012:role/GHATrustRole
-  GHA_CICD_ROLE: arn:aws:iam::123456789012:role/GHACICDRole
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || vars.ENVIRONMENT }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+      - name: Debug Variables
+        run: |
+          echo "Event Name: ${{ github.event_name }}"
+          echo "Ref Name: ${{ github.ref_name }}"
+          echo "PR Merged: ${{ github.event.pull_request.merged }}"
+          echo "PR Base Ref: ${{ github.event.pull_request.base.ref }}"
+          echo "PR Head Ref: ${{ github.event.pull_request.head.ref }}"
+          echo "Selected Environment: ${{ github.event.inputs.environment || vars.ENVIRONMENT }}"
+          echo "STACK_NAME_BASE: ${{ env.STACK_NAME_BASE }}"
+          echo "Full Stack Name: ${{ env.STACK_NAME_BASE }}-${{ github.event.inputs.environment || vars.ENVIRONMENT }}"
+          echo "All Variables:"
+          env | grep -E 'STACK_NAME_BASE|TEMPLATE_FILE|AWS_REGION|BUCKET_NAME_BASE|TABLE_NAME_BASE|LAMBDA_FUNCTION_NAME_BASE|GHA_|ENVIRONMENT' || echo "No matching variables"
       - name: Determine Environment
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -64,15 +70,15 @@ jobs:
       - name: Deploy CFN Template
         uses: ./.github/actions/update-policies
         with:
-          aws-region: ${{ env.AWS_REGION }}
-          bucket-name: ${{ env.BUCKET_NAME_BASE }}-${{ env.ENV }}
-          table-name: ${{ env.TABLE_NAME_BASE }}-${{ env.ENV }}
-          lambda-function-name: ${{ env.LAMBDA_FUNCTION_NAME_BASE }}-${{ env.ENV }}
+          aws-region: ${{ vars.AWS_REGION }}
+          bucket-name: ${{ vars.BUCKET_NAME_BASE }}-${{ env.ENV }}
+          table-name: ${{ vars.TABLE_NAME_BASE }}-${{ env.ENV }}
+          lambda-function-name: ${{ vars.LAMBDA_FUNCTION_NAME_BASE }}-${{ env.ENV }}
           environment: ${{ env.ENV }}
-          gha-trust-role: ${{ env.GHA_TRUST_ROLE }}
-          gha-cicd-role: ${{ env.GHA_CICD_ROLE }}
-          bucket-name-base: ${{ env.BUCKET_NAME_BASE }}
-          table-name-base: ${{ env.TABLE_NAME_BASE }}
+          gha-trust-role: ${{ vars.GHA_TRUST_ROLE }}
+          gha-cicd-role: ${{ vars.GHA_CICD_ROLE }}
+          bucket-name-base: ${{ vars.BUCKET_NAME_BASE }}
+          table-name-base: ${{ vars.TABLE_NAME_BASE }}
           stack-name-base: ${{ env.STACK_NAME_BASE }}
-          template-file: ${{ env.TEMPLATE_FILE }}
+          template-file: ${{ vars.TEMPLATE_FILE }}
           deploy-lambda: true
