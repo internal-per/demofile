@@ -17,3 +17,11 @@ TABLE_NAME: prp-db-org-policy-dev
 LAMBDA_FUNCTION_NAME: GuardrailPolicyUpdate-dev
 STACK_NAME: guardrail-lambda-stack-dev
 TEMPLATE_FILE: guardrail-lambda.yml
+
+
+
+Invalid workflow file: .github/workflows/gitactions-policy.yml#L52
+The workflow is not valid. .github/workflows/gitactions-policy.yml (Line: 52, Col: 9): Unrecognized named-value: 'matrix'. Located at position 2 within expression: (matrix.environments == 'dev' && github.event_name == 'push' && (github.ref_name == 'dev' || startsWith(github.ref_name, 'ttrs-'))) ||
+(matrix.environments == 'nonprod' && github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'nonprod' && github.event.pull_request.head.ref == 'dev') ||
+(matrix.e[...]
+
