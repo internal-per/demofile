@@ -22,6 +22,7 @@ permissions:
   id-token: write
   contents: write
   actions: write
+  environments: read
 env:
   STACK_NAME_BASE: guardrail-lambda-stack
 jobs:
@@ -29,9 +30,14 @@ jobs:
     runs-on: default
     environment: ${{ github.event.inputs.environment || vars.ENVIRONMENT }}
     steps:
-      - name: Checkout Repository
+      - name: Checkout Repository [${{ github.event.inputs.environment || vars.ENVIRONMENT }}]
         uses: actions/checkout@v4
-      - name: Debug Variables
+      - name: Debug Environment [${{ github.event.inputs.environment || vars.ENVIRONMENT }}]
+        run: |
+          echo "Selected Environment: ${{ github.event.inputs.environment || vars.ENVIRONMENT }}"
+          echo "Available Variables:"
+          env | grep -E 'AWS_REGION|ENVIRONMENT' || echo "No matching variables"
+      - name: Debug Variables [${{ github.event.inputs.environment || vars.ENVIRONMENT }}]
         run: |
           echo "Event Name: ${{ github.event_name }}"
           echo "Ref Name: ${{ github.ref_name }}"
@@ -44,7 +50,7 @@ jobs:
           echo "Full Stack Name: ${{ env.STACK_NAME_BASE }}-${{ github.event.inputs.environment || vars.ENVIRONMENT }}"
           echo "All Variables:"
           env | grep -E 'STACK_NAME_BASE|TEMPLATE_FILE|AWS_REGION|BUCKET_NAME_BASE|TABLE_NAME_BASE|LAMBDA_FUNCTION_NAME_BASE|GHA_|ENVIRONMENT' || echo "No matching variables"
-      - name: Determine Environment
+      - name: Determine Environment [${{ github.event.inputs.environment || vars.ENVIRONMENT }}]
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             ENV="${{ github.event.inputs.environment }}"
@@ -66,7 +72,12 @@ jobs:
             exit 0
           fi
           echo "ENV=$ENV" >> $GITHUB_ENV
-      - name: Deploy CFN Template
+      - name: Configure AWS Credentials [${{ env.ENV }}]
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GHA_CICD_ROLE }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Deploy CFN Stack [${{ env.ENV }}]
         uses: ./.github/actions/update-policies
         with:
           aws-region: ${{ vars.AWS_REGION }}
@@ -81,3 +92,10 @@ jobs:
           stack-name-base: ${{ env.STACK_NAME_BASE }}
           template-file: ${{ vars.TEMPLATE_FILE }}
           deploy-lambda: true
+      - name: Generate Deployment Status Table [${{ env.ENV }}]
+        run: |
+          echo "## Deployment Status for ${{ env.ENV }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status | Details |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Configure AWS Credentials | Success | Role: ${{ vars.GHA_CICD_ROLE }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy CFN Stack | Success | Stack: ${{ env.STACK_NAME_BASE }}-${{ env.ENV }} |" >> $GITHUB_STEP_SUMMARY
