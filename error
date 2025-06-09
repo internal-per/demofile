@@ -20,6 +20,6 @@ TEMPLATE_FILE: guardrail-lambda.yml
 
 
 
-Run if [ -z "" ]; then
-Error: vars.STACK_NAME_BASE is not set
-Error: Process completed with exit code 1
+Error: /home/runner/_work/aws-guardrail-policy-security/aws-guardrail-policy-security/./.github/actions/update-policies/action.yml (Line: 44, Col: 13): Expected format {org}/{repo}[/path]@ref. Actual '../deploy'
+
+Error: Input required and not supplied: aws-region

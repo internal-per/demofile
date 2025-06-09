@@ -4,8 +4,6 @@ on:
     branches:
       - dev
       - 'ttrs-*'
-    paths:
-      - 'policies/**'
   pull_request:
     types: [closed]
     branches:
@@ -24,9 +22,11 @@ permissions:
   id-token: write
   contents: write
   actions: write
+env:
+  STACK_NAME_BASE: guardrail-lambda-stack
 jobs:
   update:
-    runs-on: ubuntu-latest
+    runs-on: default
     environment: ${{ github.event.inputs.environment || vars.ENVIRONMENT }}
     steps:
       - name: Checkout Repository
@@ -39,16 +39,10 @@ jobs:
           echo "PR Base Ref: ${{ github.event.pull_request.base.ref }}"
           echo "PR Head Ref: ${{ github.event.pull_request.head.ref }}"
           echo "Selected Environment: ${{ github.event.inputs.environment || vars.ENVIRONMENT }}"
-          echo "STACK_NAME_BASE: ${{ vars.STACK_NAME_BASE }}"
+          echo "STACK_NAME_BASE: ${{ env.STACK_NAME_BASE }}"
+          echo "AWS_REGION: ${{ vars.AWS_REGION }}"
           echo "All Variables:"
           env | grep -E 'STACK_NAME_BASE|TEMPLATE_FILE|AWS_REGION|BUCKET_NAME_BASE|TABLE_NAME_BASE|LAMBDA_FUNCTION_NAME_BASE|GHA_|ENVIRONMENT' || echo "No matching variables"
-      - name: Validate Variables
-        run: |
-          if [ -z "${{ vars.STACK_NAME_BASE }}" ]; then
-            echo "Error: vars.STACK_NAME_BASE is not set"
-            exit 1
-          fi
-          echo "Validated STACK_NAME_BASE: ${{ vars.STACK_NAME_BASE }}"
       - name: Determine Environment
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -83,6 +77,6 @@ jobs:
           gha-cicd-role: ${{ vars.GHA_CICD_ROLE }}
           bucket-name-base: ${{ vars.BUCKET_NAME_BASE }}
           table-name-base: ${{ vars.TABLE_NAME_BASE }}
-          stack-name-base: ${{ vars.STACK_NAME_BASE }}
-          template-file: guardrail-lambda.yml
+          stack-name-base: ${{ env.STACK_NAME_BASE }}
+          template-file: ${{ vars.TEMPLATE_FILE }}
           deploy-lambda: false

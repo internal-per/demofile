@@ -41,26 +41,11 @@ runs:
   using: composite
   steps:
     - name: Setup Environment
-      uses: ../deploy
+      uses: ./.github/actions/deploy
       with:
         gha-trust-role: ${{ inputs.gha-trust-role }}
         gha-cicd-role: ${{ inputs.gha-cicd-role }}
         aws-region: ${{ inputs.aws-region }}
-    - name: Validate Variables
-      run: |
-        echo "Stack Name: ${{ inputs.stack-name-base }}-${{ inputs.environment }}"
-        echo "Bucket: ${{ inputs.bucket-name }}"
-        echo "Table: ${{ inputs.table-name }}"
-        echo "Template File: ${{ inputs.template-file }}"
-        if [ -z "${{ inputs.stack-name-base }}" ]; then
-          echo "Error: stack-name-base is empty"
-          exit 1
-        fi
-        if [ -z "${{ inputs.template-file }}" ]; then
-          echo "Error: template-file is empty"
-          exit 1
-        fi
-      shell: bash
     - name: Verify Policy Directory
       if: inputs.deploy-lambda == 'false'
       run: ls -la policies/ || echo "No policies/ directory"
