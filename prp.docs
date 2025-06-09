@@ -1,0 +1,517 @@
+Design Document: Two-Way Reconciliation Between GitHub Repository and DynamoDB
+1. Purpose
+This design document outlines a scalable, automated solution for two-way reconciliation between a GitHub repository (containing JSON files) and an AWS DynamoDB table. The solution ensures data consistency by validating and synchronizing records, focusing on the following attributes:
+
+services: The primary key (partition key in DynamoDB).
+PolicyJSON: AWS IAM actions stored as JSON.
+Version: A number incremented on pull request (PR) merges to track changes.
+CommitId: The full GitHub commit SHA for traceability.
+The reconciliation process performs bidirectional checks:
+
+GitHub-to-DynamoDB: GitHub Actions validates repository JSON files against DynamoDB records.
+DynamoDB-to-GitHub: AWS Lambda validates DynamoDB records against GitHub repository content.
+The solution is designed to be scalable, secure, and easy to maintain, with robust reporting and error handling.
+
+2. Scope
+GitHub Repository: Stores JSON files with services, PolicyJSON, Version, and CommitId.
+DynamoDB Table: Stores records with services as the partition key and attributes PolicyJSON, Version, and CommitId.
+Reconciliation Objectives:
+Detect discrepancies (missing records, mismatched PolicyJSON, Version, or CommitId).
+Validate PolicyJSON for correct AWS IAM actions.
+Ensure Version is incremented correctly on PR merges.
+Track CommitId for commit traceability.
+Scalability: Handle large numbers of JSON files and DynamoDB records efficiently.
+Reporting: Generate detailed discrepancy reports and notify stakeholders.
+3. Requirements
+3.1 Functional Requirements
+Two-Way Reconciliation:
+GitHub Actions checks DynamoDB for each JSON file on PR merge.
+Lambda checks GitHub repository content against DynamoDB records.
+Versioning:
+Increment Version in DynamoDB when a PR is merged.
+Update CommitId with the latest GitHub commit SHA.
+PolicyJSON Validation:
+Ensure PolicyJSON adheres to AWS IAM policy schema (valid Effect, Action, Resource).
+Reporting:
+Log discrepancies (e.g., missing records, mismatched data) to Amazon S3.
+Notify stakeholders via Amazon SNS (email/Slack).
+Error Handling:
+Handle transient errors (e.g., DynamoDB throttling, GitHub API rate limits).
+Use dead-letter queues (DLQs) for failed tasks.
+3.2 Non-Functional Requirements
+Scalability: Support thousands of JSON files and DynamoDB records.
+Performance: Complete reconciliation within minutes for typical workloads.
+Security: Use least privilege IAM roles, encrypt data, and secure GitHub tokens.
+Cost Efficiency: Minimize AWS service costs through optimized resource usage.
+Maintainability: Modular design with clear logging and monitoring.
+4. Architecture
+4.1 Components
+GitHub Actions: Triggers on PR merge, performs GitHub-to-DynamoDB reconciliation, and invokes Versioning Lambda.
+AWS Lambda:
+Versioning Lambda: Increments Version and updates CommitId in DynamoDB.
+Reconciliation Lambda: Performs DynamoDB-to-GitHub reconciliation using GitHub API.
+Amazon SQS: Queues reconciliation tasks for scalability.
+Amazon S3: Stores JSON files and reconciliation reports.
+Amazon SNS: Sends discrepancy notifications (email/Slack).
+Amazon CloudWatch: Logs executions and monitors performance.
+Amazon EventBridge (Optional): Triggers periodic full reconciliations.
+4.2 Workflow
+PR Merge and Versioning:
+GitHub Actions triggers on PR merge.
+Extracts services, PolicyJSON, Version, and CommitId from JSON files.
+Invokes Versioning Lambda to increment Version and update CommitId in DynamoDB.
+GitHub-to-DynamoDB Reconciliation (GitHub Actions):
+Queries DynamoDB for each services key in the repository.
+Validates PolicyJSON against IAM schema.
+Compares PolicyJSON, Version, and CommitId with DynamoDB records.
+Logs discrepancies to S3 and sends notifications via SNS.
+Sends JSON data to SQS for further processing.
+DynamoDB-to-GitHub Reconciliation (Lambda):
+Triggered by SQS or EventBridge (for periodic checks).
+Scans DynamoDB for all services records.
+Fetches JSON files from GitHub via API.
+Validates PolicyJSON and compares fields.
+Logs discrepancies to S3 and notifies via SNS.
+Reporting:
+Combines results from both reconciliation checks.
+Stores reports in S3 and notifies stakeholders via SNS.
+4.3 Architecture Diagram
+(Note: Create a diagram in Confluence using Draw.io or a tool like Lucidchart, showing:)
+
+GitHub Repository → GitHub Actions → Versioning Lambda → DynamoDB.
+GitHub Actions → SQS → Reconciliation Lambda → GitHub API.
+S3 for reports, SNS for notifications, CloudWatch for logging.
+5. Implementation Details
+5.1 DynamoDB Schema
+Table Name: ServicesTable
+Partition Key: services (String)
+Attributes:
+PolicyJSON (Map): AWS IAM actions (e.g., {"Version": "2012-10-17", "Statement": [...]}).
+Version (Number): Incremented on PR merge (e.g., 0, 1, 2).
+CommitId (String): Full GitHub commit SHA.
+Optional Indexes: Global Secondary Index (GSI) on Version or CommitId for querying.
+5.2 GitHub Actions Workflow
+File: .github/workflows/reconcile.yml
+
+yaml
+
+Collapse
+
+Unwrap
+
+Copy
+name: Two-Way Reconciliation
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - 'json_files/**'
+jobs:
+  sync-and-reconcile:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install boto3 jsonschema requests deepdiff
+      - name: Reconcile and Update
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          LAMBDA_FUNCTION_NAME: ${{ secrets.VERSIONING_LAMBDA }}
+          SQS_QUEUE_URL: ${{ secrets.SQS_QUEUE_URL }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/reconcile_github_to_dynamodb.py
+Script: scripts/reconcile_github_to_dynamodb.py
+
+python
+
+Collapse
+
+Unwrap
+
+Run
+
+Copy
+import json
+import boto3
+import glob
+import os
+import requests
+from jsonschema import validate, ValidationError
+from deepdiff import DeepDiff
+
+dynamodb = boto3.resource('dynamodb')
+lambda_client = boto3.client('lambda')
+sqs = boto3.client('sqs')
+table = dynamodb.Table('ServicesTable')
+queue_url = os.environ['SQS_QUEUE_URL']
+commit_sha = os.environ['COMMIT_SHA']
+lambda_function = os.environ['LAMBDA_FUNCTION_NAME']
+
+iam_schema = {
+    "type": "object",
+    "properties": {
+        "Version": {"type": "string"},
+        "Statement": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "Effect": {"enum": ["Allow", "Deny"]},
+                    "Action": {"type": ["string", "array"]},
+                    "Resource": {"type": ["string", "array"]}
+                },
+                "required": ["Effect", "Action", "Resource"]
+            }
+        }
+    },
+    "required": ["Version", "Statement"]
+}
+
+discrepancies = []
+
+for file_path in glob.glob('json_files/*.json'):
+    with open(file_path, 'r') as f:
+        data = json.load(f)
+        service_key = data.get('services')
+        if not service_key:
+            discrepancies.append(f"Missing 'services' key in {file_path}")
+            continue
+
+        try:
+            validate(instance=data.get('PolicyJSON'), schema=iam_schema)
+        except ValidationError as e:
+            discrepancies.append(f"Invalid PolicyJSON for {service_key}: {str(e)}")
+            continue
+
+        try:
+            response = table.get_item(Key={'services': service_key})
+            dynamo_item = response.get('Item')
+            if not dynamo_item:
+                discrepancies.append(f"Service {service_key} missing in DynamoDB")
+            else:
+                diff = DeepDiff(data.get('PolicyJSON'), dynamo_item.get('PolicyJSON'), ignore_order=True)
+                if diff:
+                    discrepancies.append(f"PolicyJSON mismatch for {service_key}: {diff}")
+                if data.get('Version', 0) != dynamo_item.get('Version'):
+                    discrepancies.append(f"Version mismatch for {service_key}: GitHub={data.get('Version')}, DynamoDB={dynamo_item.get('Version')}")
+                if data.get('CommitId') != dynamo_item.get('CommitId'):
+                    discrepancies.append(f"CommitId mismatch for {service_key}: GitHub={data.get('CommitId')}, DynamoDB={dynamo_item.get('CommitId')}")
+        except Exception as e:
+            discrepancies.append(f"Error for {service_key}: {str(e)}")
+
+        lambda_client.invoke(
+            FunctionName=lambda_function,
+            InvocationType='Event',
+            Payload=json.dumps({
+                'services': service_key,
+                'PolicyJSON': data.get('PolicyJSON'),
+                'CommitId': commit_sha
+            })
+        )
+
+        sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps({
+                'services': service_key,
+                'PolicyJSON': data.get('PolicyJSON'),
+                'Version': data.get('Version', 0),
+                'CommitId': commit_sha
+            })
+        )
+
+if discrepancies:
+    s3 = boto3.client('s3')
+    s3.put_object(
+        Bucket='your-report-bucket',
+        Key=f'reports/github_to_dynamodb_{commit_sha}.json',
+        Body=json.dumps({'discrepancies': discrepancies})
+    )
+    sns = boto3.client('sns')
+    sns.publish(
+        TopicArn='YOUR_SNS_TOPIC_ARN',
+        Message=f'GitHub-to-DynamoDB issues: {json.dumps(discrepancies)}'
+    )
+5.3 Versioning Lambda
+Function: versioning_lambda
+
+python
+
+Collapse
+
+Unwrap
+
+Run
+
+Copy
+import json
+import boto3
+
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('ServicesTable')
+
+def lambda_handler(event, context):
+    service_key = event['services']
+    policy_json = event['PolicyJSON']
+    commit_id = event['CommitId']
+    
+    try:
+        response = table.get_item(Key={'services': service_key})
+        current_version = response.get('Item', {}).get('Version', -1)
+        new_version = current_version + 1
+        
+        table.put_item(
+            Item={
+                'services': service_key,
+                'PolicyJSON': policy_json,
+                'Version': new_version,
+                'CommitId': commit_id
+            }
+        )
+        return {'statusCode': 200, 'message': f'Updated {service_key} to version {new_version}'}
+    except Exception as e:
+        return {'statusCode': 500, 'message': str(e)}
+5.4 Reconciliation Lambda (DynamoDB-to-GitHub)
+Function: reconciliation_lambda
+
+python
+
+Collapse
+
+Unwrap
+
+Run
+
+Copy
+import json
+import boto3
+import requests
+from jsonschema import validate, ValidationError
+from deepdiff import DeepDiff
+
+dynamodb = boto3.resource('dynamodb')
+s3 = boto3.client('s3')
+sns = boto3.client('sns')
+table = dynamodb.Table('ServicesTable')
+
+iam_schema = {
+    "type": "object",
+    "properties": {
+        "Version": {"type": "string"},
+        "Statement": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "Effect": {"enum": ["Allow", "Deny"]},
+                    "Action": {"type": ["string", "array"]},
+                    "Resource": {"type": ["string", "array"]}
+                },
+                "required": ["Effect", "Action", "Resource"]
+            }
+        }
+    },
+    "required": ["Version", "Statement"]
+}
+
+def lambda_handler(event, context):
+    discrepancies = []
+    github_token = 'YOUR_GITHUB_TOKEN'  # Use AWS Secrets Manager
+    repo = 'YOUR_ORG/YOUR_REPO'
+    headers = {'Authorization': f'token {github_token}'}
+    
+    try:
+        response = table.scan()
+        dynamo_items = response.get('Items', [])
+        while 'LastEvaluatedKey' in response:
+            response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+            dynamo_items.extend(response.get('Items', []))
+        
+        github_files = requests.get(
+            f'https://api.github.com/repos/{repo}/contents/json_files',
+            headers=headers
+        ).json()
+        
+        github_services = {}
+        for file in github_files:
+            if file['name'].endswith('.json'):
+                file_content = requests.get(file['download_url'], headers=headers).json()
+                if file_content.get('services'):
+                    github_services[file_content['services']] = file_content
+        
+        for item in dynamo_items:
+            service_key = item['services']
+            try:
+                validate(instance=item['PolicyJSON'], schema=iam_schema)
+            except ValidationError as e:
+                discrepancies.append(f"Invalid PolicyJSON in DynamoDB for {service_key}: {str(e)}")
+                continue
+            github_item = github_services.get(service_key)
+            if not github_item:
+                discrepancies.append(f"Service {service_key} missing in GitHub")
+                continue
+            diff = DeepDiff(item['PolicyJSON'], github_item.get('PolicyJSON'), ignore_order=True)
+            if diff:
+                discrepancies.append(f"PolicyJSON mismatch for {service_key}: {diff}")
+            if item['Version'] != github_item.get('Version'):
+                discrepancies.append(f"Version mismatch for {service_key}: DynamoDB={item['Version']}, GitHub={github_item.get('Version')}")
+            if item['CommitId'] != github_item.get('CommitId'):
+                discrepancies.append(f"CommitId mismatch for {service_key}: DynamoDB={item['CommitId']}, GitHub={github_item.get('CommitId')}")
+        
+        for service_key in github_services:
+            if not any(item['services'] == service_key for item in dynamo_items):
+                discrepancies.append(f"Service {service_key} in GitHub but missing in DynamoDB")
+                
+    except Exception as e:
+        discrepancies.append(f"Error in DynamoDB-to-GitHub reconciliation: {str(e)}")
+    
+    s3.put_object(
+        Bucket='your-report-bucket',
+        Key=f'reports/dynamodb_to_github_{context.aws_request_id}.json',
+        Body=json.dumps({'discrepancies': discrepancies})
+    )
+    
+    if discrepancies:
+        sns.publish(
+            TopicArn='YOUR_SNS_TOPIC_ARN',
+            Message=f'DynamoDB-to-GitHub issues: {json.dumps(discrepancies)}'
+        )
+    
+    return {'statusCode': 200, 'body': json.dumps({'discrepancies': discrepancies})}
+5.5 AWS Services Configuration
+SQS Queue:
+Name: ReconciliationQueue
+Configure DLQ for failed messages.
+Batch size: 10 messages for Lambda trigger.
+S3 Bucket:
+Name: your-report-bucket
+Enable versioning and lifecycle policies (e.g., archive reports after 30 days).
+SNS Topic:
+Name: ReconciliationNotifications
+Subscriptions: Email or Slack webhook.
+CloudWatch:
+Log Lambda executions and GitHub Actions workflows.
+Set alarms for errors or throttling.
+EventBridge (Optional):
+Schedule periodic DynamoDB-to-GitHub reconciliation (e.g., daily).
+6. Reconciliation Logic
+GitHub-to-DynamoDB (GitHub Actions):
+Check if services exists in DynamoDB.
+Validate PolicyJSON against IAM schema.
+Compare PolicyJSON, Version, and CommitId using DeepDiff.
+Flag discrepancies (e.g., missing records, mismatched data).
+DynamoDB-to-GitHub (Lambda):
+Scan DynamoDB for all services records.
+Fetch GitHub JSON files via API.
+Validate PolicyJSON and compare fields.
+Flag missing services or mismatches.
+Validation:
+Ensure PolicyJSON has valid Effect, Action, and Resource fields.
+Check Version consistency to detect out-of-sync updates.
+Verify CommitId matches the latest commit SHA.
+7. Scalability
+GitHub Actions:
+Use matrix jobs or pagination for large repositories.
+Handle GitHub API rate limits with exponential backoff.
+SQS and Lambda:
+Auto-scales with batch processing.
+Adjust concurrency and batch size for high throughput.
+DynamoDB:
+Use on-demand capacity or auto-scaling.
+Optimize Scan with pagination or BatchGetItem.
+Cost Optimization:
+Archive S3 reports with lifecycle policies.
+Optimize Lambda memory (e.g., 128-256 MB) and timeout.
+Cache GitHub API responses in S3 to reduce calls.
+8. Security
+IAM Roles:
+Least privilege for Lambda, SQS, S3, SNS, and DynamoDB access.
+Example: Lambda role with dynamodb:PutItem, s3:PutObject, sns:Publish.
+GitHub Token:
+Store in AWS Secrets Manager or GitHub Secrets.
+Restrict to repository read access.
+Encryption:
+Enable AWS KMS for S3, SNS, and DynamoDB.
+Use HTTPS for GitHub API calls.
+PolicyJSON Validation:
+Prevent overly permissive actions (e.g., *:*).
+9. Monitoring and Maintenance
+CloudWatch Logs:
+Log reconciliation results, errors, and API responses.
+Example: Log DeepDiff output for PolicyJSON mismatches.
+CloudWatch Alarms:
+Alert on Lambda errors, DynamoDB throttling, or SQS DLQ messages.
+Periodic Reconciliation:
+Use EventBridge to schedule full DynamoDB-to-GitHub checks (e.g., daily).
+Auditing:
+Store reconciliation reports in S3 for 30-90 days.
+Track Version and CommitId for change history.
+10. Example JSON File
+json
+
+Collapse
+
+Unwrap
+
+Copy
+{
+  "services": "auth-service",
+  "PolicyJSON": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": ["s3:GetObject", "s3:PutObject"],
+        "Resource": "arn:aws:s3:::example-bucket/*"
+      }
+    ]
+  },
+  "Version": 2,
+  "CommitId": "abc123def4567890..."
+}
+11. Example Reconciliation Report
+json
+
+Collapse
+
+Unwrap
+
+Copy
+{
+  "discrepancies": [
+    "GitHub-to-DynamoDB: Service 'auth-service' missing in DynamoDB",
+    "GitHub-to-DynamoDB: PolicyJSON mismatch for 'payment-service': {'values_changed': {'Statement[0].Action[0]': {'new_value': 's3:PutObject', 'old_value': 's3:GetObject'}}}",
+    "GitHub-to-DynamoDB: Version mismatch for 'user-service': GitHub=2, DynamoDB=1",
+    "DynamoDB-to-GitHub: Service 'order-service' missing in GitHub",
+    "DynamoDB-to-GitHub: Invalid PolicyJSON for 'inventory-service': Missing 'Resource' field"
+  ]
+}
+12. Risks and Mitigations
+Risk: GitHub API rate limits.
+Mitigation: Implement exponential backoff, cache API responses in S3.
+Risk: DynamoDB throttling.
+Mitigation: Use on-demand capacity, batch operations, and retries.
+Risk: Inconsistent Version updates.
+Mitigation: Ensure Versioning Lambda is idempotent and uses conditional writes.
+Risk: Security of GitHub token.
+Mitigation: Store in AWS Secrets Manager, rotate regularly.
+13. Future Enhancements
+Automated Fixes: Add Lambda logic to sync missing records or update outdated ones.
+Step Functions: Orchestrate complex workflows for versioning and reconciliation.
+Advanced Validation: Check PolicyJSON for least privilege using AWS IAM Access Analyzer.
+Dashboard: Create a CloudWatch dashboard for reconciliation metrics.
+14. Assumptions
+GitHub repository has a json_files directory with JSON files.
+DynamoDB table (ServicesTable) is pre-provisioned.
+AWS credentials and GitHub token are configured in GitHub Secrets and AWS Secrets Manager.
+SNS topic is subscribed to email or Slack.
+15. Dependencies
+AWS Services: DynamoDB, Lambda, SQS, S3, SNS, CloudWatch, EventBridge.
+GitHub: Actions, API access with token.
+Python Libraries: boto3, jsonschema, requests, deepdiff.
