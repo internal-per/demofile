@@ -1,0 +1,250 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: PRP Infra DDB for PACMAN Exception Policy deployment
+
+# ============= Template Parameter =============
+# Configuration values passed during deployment
+Parameters:
+  Environment:
+    Type: String
+    Description: Environment name (e.g., development, staging, production)
+  EnvSuffix:
+    Type: String
+    Description: Short environment suffix (e.g., dev, stg, prod)
+  PolicyType:
+    Type: String
+    Description: Type of policy being managed (tenant/org)
+  ServiceType:
+    Type: String
+    Description: Service type (always 'exception' for this template)
+  OrganizationId:
+    Type: String
+    Description: AWS Organization ID for access control
+  LambdaRoleName:
+    Type: String
+    Description: Name of the Lambda execution role
+  TableName:
+    Type: String
+    Description: Name of the DynamoDB table to store policies
+  BucketNamePrefix:
+    Type: String
+    Default: "prp"
+    Description: Prefix for bucket names (will be combined with env suffix)
+  SSMParameterPrefix:
+    Type: String
+    Default: "/prp"
+    Description: Prefix for SSM parameter paths
+  FunctionNamePrefix:
+    Type: String
+    Default: "prp"
+    Description: Prefix for Lambda function names (will be combined with env suffix)
+  RuleNamePrefix:
+    Type: String
+    Default: "prp"
+    Description: Prefix for EventBridge rule names (will be combined with env suffix)
+
+Resources:
+  # ============= IAM Role =============
+  # Lambda execution role with DynamoDB and SSM permissions
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref LambdaRoleName
+      # Permission boundary to limit maximum permissions
+      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/cns-boundary-tenant-permission-boundary"
+      # Trust policy - allows Lambda service to assume this role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      # AWS managed policy for CloudWatch Logs access
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      # Custom permissions for DynamoDB, SSM, and EventBridge
+      Policies:
+        - PolicyName: !Sub "tenant-custom-${PolicyType}-${ServiceType}-lambda-policy-${EnvSuffix}"
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # DynamoDB table access
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem      
+                  - dynamodb:GetItem      
+                  - dynamodb:UpdateItem   
+                  - dynamodb:Query        
+                Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}"
+              # SSM Parameter Store access
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter      
+                  - ssm:PutParameter      
+                Resource: 
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SSMParameterPrefix}/${PolicyType}-${ServiceType}/*"
+              # EventBridge rule management
+              - Effect: Allow
+                Action:
+                  - events:PutRule        
+                  - events:DeleteRule     
+                  - events:PutTargets     
+                  - events:RemoveTargets  
+                  - events:DescribeRule   
+                Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/${RuleNamePrefix}-${PolicyType}-${ServiceType}-*"
+  
+  # ============= DynamoDB Table =============
+  # Exception policies storage with composite key
+  PolicyTable:
+    Type: AWS::DynamoDB::Table
+    DependsOn: LambdaExecutionRole
+    Properties:
+      TableName: !Ref TableName
+      # Composite key: HashValue (policy hash) + AccountID
+      AttributeDefinitions:
+        - AttributeName: HashValue    
+          AttributeType: S            
+        - AttributeName: AccountID    
+          AttributeType: N            
+      KeySchema:
+        - AttributeName: HashValue
+          KeyType: HASH               
+        - AttributeName: AccountID
+          KeyType: RANGE              
+      ProvisionedThroughput:
+        ReadCapacityUnits: 10         
+        WriteCapacityUnits: 10        
+      # Resource-based access policy for the table
+      ResourcePolicy:
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                AWS: !GetAtt LambdaExecutionRole.Arn
+              Action:
+                - dynamodb:GetItem 
+                - dynamodb:UpdateItem 
+                - dynamodb:DescribeTable 
+                - dynamodb:PutItem
+                - dynamodb:Query
+              Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}"
+            - Effect: Allow
+              Principal:
+                AWS: '*'
+              Action:
+                - dynamodb:GetItem 
+                - dynamodb:BatchGetItem
+              Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TableName}"
+              Condition:
+                StringEquals:
+                  aws:PrincipalOrgID: !Ref OrganizationId
+
+  # Lambda Function for Processing Exception Policies
+  PolicyProcessorFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: 
+      - PolicyTable
+      - LambdaExecutionRole
+    Properties:
+      FunctionName: !Sub "${FunctionNamePrefix}-${PolicyType}-${ServiceType}-processor-${EnvSuffix}"
+      CodeUri: ../../src/functions/tenant-exception-ddb    # Path to function code
+      Handler: index.handler                               # Entry point function
+      Runtime: python3.11                                 # Python runtime version
+      Role: !GetAtt LambdaExecutionRole.Arn              # IAM role for execution
+      # Environment variables passed to the function
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TableName                      # DynamoDB table name
+
+  # S3 Bucket for Policy File Storage
+  PolicyBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${BucketNamePrefix}-${PolicyType}-${ServiceType}-policies-${EnvSuffix}-${AWS::AccountId}"
+      # Enable versioning to track policy changes
+      VersioningConfiguration:
+        Status: Enabled
+      # Enable EventBridge notifications for object changes
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+            
+  # SSM Parameter to Store DynamoDB Table ARN
+  PolicyTableParameter:
+    Type: AWS::SSM::Parameter
+    DependsOn: PolicyTable
+    Properties:
+      Name: !Sub "${SSMParameterPrefix}/${PolicyType}-${ServiceType}/table-arn-${EnvSuffix}"
+      Type: String
+      Value: !GetAtt PolicyTable.Arn
+      Description: !Sub "ARN of the ${PolicyType} ${ServiceType} policy table for ${EnvSuffix} environment"
+  
+  # IAM Managed Policy for Organization-Wide Table Access
+  TableAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    DependsOn: PolicyTable
+    Properties:
+      ManagedPolicyName: !Sub "tenant-custom-${PolicyType}-${ServiceType}-table-access-${EnvSuffix}"
+      Description: !Sub "Policy for accessing the ${PolicyType} ${ServiceType} policy table for ${EnvSuffix} environment"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:BatchGetItem
+            Resource: !GetAtt PolicyTable.Arn
+      
+  # EventBridge rule to handle S3 
+  S3EventRule:
+    Type: AWS::Events::Rule
+    DependsOn:
+      - PolicyBucket
+      - PolicyProcessorFunction
+    Properties:
+      Name: !Sub "${RuleNamePrefix}-${PolicyType}-${ServiceType}-s3events-${EnvSuffix}"
+      Description: !Sub "Rule to capture S3 events for ${PolicyType} ${ServiceType} policies"
+      EventPattern:
+        source:
+          - "aws.s3"
+        detail-type:
+          - "Object Created"
+        detail:
+          bucket:
+            name:
+              - !Ref PolicyBucket
+          object:
+            key:
+              - prefix: !Sub "policies/${PolicyType}/"
+      State: ENABLED
+      Targets:
+        - Id: "ProcessorLambdaTarget"
+          Arn: !GetAtt PolicyProcessorFunction.Arn
+  
+  # Permissions for EventBridge to invoke Lambda
+  EventBridgeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    DependsOn:
+      - PolicyProcessorFunction
+      - S3EventRule
+    Properties:
+      FunctionName: !Ref PolicyProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt S3EventRule.Arn
+
+Outputs:
+  TableArn:
+    Description: ARN of the DynamoDB table
+    Value: !GetAtt PolicyTable.Arn
+  FunctionArn:
+    Description: ARN of the Lambda function
+    Value: !GetAtt PolicyProcessorFunction.Arn
+  BucketName:
+    Description: Name of the S3 bucket
+    Value: !Ref PolicyBucket
+  TableAccessPolicyArn:
+    Description: ARN of the IAM policy for table access
+    Value: !Ref TableAccessPolicy

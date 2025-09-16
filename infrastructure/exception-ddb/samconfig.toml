@@ -1,0 +1,32 @@
+version = 0.1
+
+# Global parameters that apply to all commands
+[default.global.parameters]
+region = "ap-southeast-2"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND"
+
+# Parameters specific to the 'deploy' command
+[default.deploy.parameters]
+no_fail_on_empty_changeset = true
+
+# Parameters specific to the 'package' command
+[default.package.parameters]
+s3_prefix = "lambda/POLICY_TYPE"
+
+# Exception policy configurations
+[exception-preview.deploy.parameters]
+stack_name = "prp-tetris-tar-exception-preview"
+s3_prefix = "exception/preview"
+parameter_overrides = "PolicyType=exception EnvSuffix=preview Environment=dev OrganizationId=${ORGANIZATION_ID} LambdaRoleName=tenant-custom-PRPGuardrailExceptionRole TableName=ExceptionReferencePolicy"
+
+[exception-nonprod.deploy.parameters]
+stack_name = "${STACK_NAME}-exception-nonprod"
+s3_bucket = "${BUCKET_NAME}"
+s3_prefix = "exception/nonprod"
+parameter_overrides = "PolicyType=exception EnvSuffix=nonprod Environment=dev OrganizationId=${ORGANIZATION_ID} LambdaRoleName=tenant-custom-PRPGuardrailExceptionRole TableName=ExceptionReferencePolicy"
+
+[exception-prod.deploy.parameters]
+stack_name = "${STACK_NAME}-exception-policies-prod"
+s3_bucket = "${BUCKET_NAME}"
+s3_prefix = "exception/prod"
+parameter_overrides = "PolicyType=exception EnvSuffix=prod Environment=prod OrganizationId=${ORGANIZATION_ID} LambdaRoleName=tenant-custom-PRPGuardrailExceptionRole TableName=ExceptionReferencePolicy"

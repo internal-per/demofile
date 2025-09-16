@@ -1,0 +1,17 @@
+version = 0.1
+
+# Global parameters that apply to all commands
+[default.global.parameters]
+region = "ap-southeast-2"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND"
+
+# Parameters specific to the 'deploy' command
+[default.deploy.parameters]
+# REMOVED: resolve_s3 = true  <- This conflicts with --s3-bucket in command line
+no_fail_on_empty_changeset = true
+stack_name = "prp-org-policies-preview"
+
+# Parameters specific to the 'package' command
+[default.package.parameters]
+s3_prefix = "lambda/org"
+# REMOVED: s3_bucket = "${DEPLOYMENT_BUCKET}" <- This should be passed via command line only
