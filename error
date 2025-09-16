@@ -1,25 +1,63 @@
-Resource handler returned message: "One or more parameter values were invalid: Invalid principal in policy document. (Service: DynamoDb, Status Code: 400, Request ID: RMDS7IS751JDN7FB77O92TTE6NVV4KQNSO5AEMVJF66Q9ASUAAJG) (SDK Attempt Count: 1)" (RequestToken: 15255db1-029b-b55a-047f-425b73475ffe, HandlerErrorCode: InvalidRequest)
-AWS_REGION: e.g., ap-southeast-2
-STACK_NAME: e.g., tarv2-prp-ddb-stack
-TABLE_NAME: e.g., OrgReferencePolicies
-ORGANIZATION_ID: e.g., o-fvwvfa9my5
-GHA_TRUST_ROLE: IAM role for OIDC authentication.
-GHA_CICD_ROLE: IAM role for CI/CD operations.
-LAMBDA_ROLE_NAME: e.g., GuardrailPolicyUpdateRole
+Run echo "Validating org-guardrails template"
+Validating org-guardrails template
 
+Error: 'NoneType' object has no attribute 'get'
+Traceback:
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/click/core.py", line 1082, in main
+    rv = self.invoke(ctx)
+         ^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/click/core.py", line 1697, in invoke
+    return _process_result(sub_ctx.command.invoke(sub_ctx))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/click/core.py", line 1443, in invoke
+    return ctx.invoke(self.callback, **ctx.params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/click/core.py", line 788, in invoke
+    return __callback(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/cli/cli_config_file.py", line 347, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/click/decorators.py", line 92, in new_func
+    return ctx.invoke(f, obj, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/click/core.py", line 788, in invoke
+    return __callback(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/lib/telemetry/metric.py", line 185, in wrapped
+    raise exception  # pylint: disable=raising-bad-type
+    ^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/lib/telemetry/metric.py", line 150, in wrapped
+    return_value = func(*args, **kwargs)
+                   ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/lib/utils/version_checker.py", line 43, in wrapped
+    actual_result = func(*args, **kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/cli/main.py", line 95, in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/commands/_utils/cdk_support_decorators.py", line 40, in wrapped
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/commands/_utils/command_exception_handler.py", line 89, in wrapper_command_exception_handler
+    raise ex
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/commands/_utils/command_exception_handler.py", line 69, in wrapper_command_exception_handler
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/commands/validate/validate.py", line 70, in cli
+    do_cli(ctx, template_file, lint)  # pragma: no cover
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/commands/validate/validate.py", line 95, in do_cli
+    validator.get_translated_template_if_valid()
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/lib/translate/sam_template_validator.py", line 83, in get_translated_template_if_valid
+    self._replace_local_image()
+  File "/opt/hostedtoolcache/Python/3.11.13/x64/lib/python3.11/site-packages/samcli/lib/translate/sam_template_validator.py", line 166, in _replace_local_image
+    is_local_image = resource.get("Metadata", {}).get("Dockerfile")
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-GHA_TRUST_ROLE: arn:aws:iam::123456789012:role/GHATrustRole
-GHA_CICD_ROLE: arn:aws:iam::123456789012:role/GHACICDRole
-PYTHON_VERSION: 3.11
-AWS_REGION: ap-southeast-2
-BUCKET_NAME: guardrail-policy-deploy-temp-dev
-TABLE_NAME: prp-db-org-policy-dev
-LAMBDA_FUNCTION_NAME: GuardrailPolicyUpdate-dev
-STACK_NAME: guardrail-lambda-stack-dev
-TEMPLATE_FILE: guardrail-lambda.yml
-
-
-
-Error: /home/runner/_work/aws-guardrail-policy-security/aws-guardrail-policy-security/./.github/actions/update-policies/action.yml (Line: 44, Col: 13): Expected format {org}/{repo}[/path]@ref. Actual '../deploy'
-
-Error: Input required and not supplied: aws-region
+An unexpected error was encountered while executing "sam validate".
+Search for an existing issue:
+https://github.com/aws/aws-sam-cli/issues?q=is%3Aissue+is%3Aopen+Bug%3A%20sam%20validate%20-%20AttributeError
+Or create a bug report:
+https://github.com/aws/aws-sam-cli/issues/new?template=Bug_report.md&title=Bug%3A%20sam%20validate%20-%20AttributeError
+❌ SAM template validation failed
