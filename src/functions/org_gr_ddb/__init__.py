@@ -1,1 +1,0 @@
-"""Organization guardrails DynamoDB Lambda package."""
